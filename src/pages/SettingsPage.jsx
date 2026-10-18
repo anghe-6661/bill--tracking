@@ -45,7 +45,7 @@ export default function SettingsPage({ onRefresh }) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `有数_财务与物品备份_${new Date().toISOString().split('T')[0]}.json`;
+    a.download = `Bill_财务与物品备份_${new Date().toISOString().split('T')[0]}.json`;
     a.click();
     URL.revokeObjectURL(url);
     showToast('JSON 备份数据已导出下载！');

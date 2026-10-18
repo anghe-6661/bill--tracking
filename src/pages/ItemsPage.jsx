@@ -84,9 +84,9 @@ export default function ItemsPage({ onRefresh }) {
           'radial-gradient(ellipse 100% 65% at 20% -10%, rgba(226, 246, 181, 0.7) 0%, rgba(242, 249, 225, 0.4) 40%, rgba(245, 246, 248, 0) 70%), #F5F6F8',
       }}
     >
-      {/* ── 顶部标题区: pt-6 pb-3 flex justify-between items-center, 有数 text-[26px] font-bold text-gray-900 ── */}
+      {/* ── 顶部标题区: pt-6 pb-3 flex justify-between items-center, Bill text-[26px] font-bold text-gray-900 ── */}
       <div className="pt-6 pb-3 flex justify-between items-center">
-        <h1 className="text-[26px] font-bold text-gray-900 leading-none">有数</h1>
+        <h1 className="text-[26px] font-bold text-gray-900 leading-none">Bill</h1>
         <button
           onClick={() => setShowSearch(!showSearch)}
           className="w-10 h-10 rounded-full border border-black/15 bg-transparent flex items-center justify-center active:scale-95 transition"

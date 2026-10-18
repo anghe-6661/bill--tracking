@@ -1,7 +1,7 @@
 import { Home, Receipt, TrendingUp, Settings, Plus } from 'lucide-react';
 
 const tabs = [
-  { key: 'items', label: '有数', icon: Home },
+  { key: 'items', label: 'Bill', icon: Home },
   { key: 'bills', label: '账单', icon: Receipt },
   { key: 'trends', label: '趋势', icon: TrendingUp },
   { key: 'settings', label: '设置', icon: Settings },
