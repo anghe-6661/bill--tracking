@@ -9,6 +9,10 @@ import {
   ShieldCheck,
   CheckCircle2,
   Share,
+  KeyRound,
+  Eye,
+  EyeOff,
+  Sparkles,
 } from 'lucide-react';
 import {
   getSettings,
@@ -25,6 +29,25 @@ export default function SettingsPage({ onRefresh }) {
 
   const [dailyBudget, setDailyBudget] = useState(settings.dailyBudget || 150);
   const [successMsg, setSuccessMsg] = useState('');
+
+  // DeepSeek API Key
+  const [deepseekKey, setDeepseekKey] = useState(
+    localStorage.getItem('deepseek_api_key') || ''
+  );
+  const [showKey, setShowKey] = useState(false);
+  const hasDeepSeekKey = Boolean(localStorage.getItem('deepseek_api_key'));
+
+  const handleSaveDeepSeekKey = (e) => {
+    e.preventDefault();
+    localStorage.setItem('deepseek_api_key', deepseekKey);
+    showToast(deepseekKey ? 'DeepSeek API Key 已保存！AI 识图功能已激活。' : 'API Key 已清除，将使用 Mock 演示模式。');
+  };
+
+  const handleClearDeepSeekKey = () => {
+    localStorage.removeItem('deepseek_api_key');
+    setDeepseekKey('');
+    showToast('DeepSeek API Key 已清除。');
+  };
 
   const showToast = (msg) => {
     setSuccessMsg(msg);
@@ -126,6 +149,61 @@ export default function SettingsPage({ onRefresh }) {
           >
             保存每日预算
           </button>
+        </form>
+      </div>
+
+      {/* ── DeepSeek AI 视觉识图配置 ── */}
+      <div className="card p-4 mb-4 border border-gray-100 bg-gradient-to-br from-white to-blue-50/30">
+        <div className="flex items-center justify-between mb-1">
+          <div className="flex items-center gap-2">
+            <KeyRound size={17} className="text-[#007AFF]" />
+            <h2 className="text-sm font-bold text-[#1A1A2E]">DeepSeek AI 识图配置</h2>
+          </div>
+          {hasDeepSeekKey && (
+            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-[#34C759] bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+              <Sparkles size={10} /> AI 已激活
+            </span>
+          )}
+        </div>
+        <p className="text-[11px] text-[#8E8E9A] mb-3 leading-relaxed">
+          配置后，上传账单截图 / 添加物品图片时将调用 DeepSeek 视觉大模型真实识别，告别 Mock 演示。
+          Key 可在{' '}
+          <span className="text-[#007AFF] font-semibold">platform.deepseek.com</span> 免费申请。
+        </p>
+        <form onSubmit={handleSaveDeepSeekKey} className="space-y-2">
+          <div className="relative flex items-center">
+            <input
+              type={showKey ? 'text' : 'password'}
+              placeholder="sk-..."
+              value={deepseekKey}
+              onChange={(e) => setDeepseekKey(e.target.value)}
+              className="w-full px-3 py-2.5 pr-10 bg-[#F8F9FA] border border-gray-200 rounded-xl text-xs font-mono outline-none focus:border-[#007AFF] transition"
+            />
+            <button
+              type="button"
+              onClick={() => setShowKey(!showKey)}
+              className="absolute right-3 text-[#8E8E9A] hover:text-[#1A1A2E] transition"
+            >
+              {showKey ? <EyeOff size={15} /> : <Eye size={15} />}
+            </button>
+          </div>
+          <div className="flex gap-2">
+            <button
+              type="submit"
+              className="flex-1 py-2 rounded-xl bg-[#007AFF] text-white text-xs font-bold shadow-xs active:scale-95 transition"
+            >
+              保存 API Key
+            </button>
+            {hasDeepSeekKey && (
+              <button
+                type="button"
+                onClick={handleClearDeepSeekKey}
+                className="px-4 py-2 rounded-xl bg-red-50 text-red-500 text-xs font-semibold border border-red-200 active:scale-95 transition"
+              >
+                清除
+              </button>
+            )}
+          </div>
         </form>
       </div>
 

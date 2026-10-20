@@ -42,17 +42,64 @@ const MOCK_OCR_TEMPLATES = [
   },
 ];
 
+// Call DeepSeek Vision API to parse a payment screenshot
+async function parseBillWithDeepSeek(base64Image, apiKey) {
+  const base64Data = base64Image.split(',')[1];
+  const mimeType = base64Image.split(';')[0].split(':')[1] || 'image/jpeg';
+
+  const response = await fetch('https://api.deepseek.com/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: 'deepseek-chat',
+      messages: [
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'image_url',
+              image_url: {
+                url: `data:${mimeType};base64,${base64Data}`,
+              },
+            },
+            {
+              type: 'text',
+              text: '这是一张支付截图（微信支付/支付宝/银行转账等）。请提取消费信息，仅返回一个 JSON 对象，格式：{"merchant":"商户或交易说明","amount":金额数字,"category":"餐饮美食/交通出行/日常购物/娱乐/医疗健康/数码订阅/其他 之一","payMethod":"微信支付/支付宝/银行卡/现金/其他 之一","date":"YYYY-MM-DD格式日期","time":"HH:MM格式时间"}。无法识别的字段填null。不要返回其他文字。',
+            },
+          ],
+        },
+      ],
+      max_tokens: 300,
+    }),
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err?.error?.message || `API 错误 ${response.status}`);
+  }
+
+  const data = await response.json();
+  const text = data.choices?.[0]?.message?.content || '';
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) throw new Error('无法解析识别结果');
+  return JSON.parse(jsonMatch[0]);
+}
+
 export default function BillUploadModal({ onClose, onRefresh }) {
   const fileInputRef = useRef(null);
 
   // States
   const [screenshot, setScreenshot] = useState(null);
   const [isScanning, setIsScanning] = useState(false);
-  const [scanStep, setScanStep] = useState(0); // 0: idle, 1: reading pixels, 2: AI parsing, 3: completed
+  const [scanStep, setScanStep] = useState(0); // 0: idle, 1: reading, 2: AI parsing, 3: done
   const [showApiKeySetting, setShowApiKeySetting] = useState(false);
-  const [geminiApiKey, setGeminiApiKey] = useState(
-    localStorage.getItem('gemini_api_key') || ''
+  const [deepseekApiKey, setDeepseekApiKey] = useState(
+    localStorage.getItem('deepseek_api_key') || ''
   );
+  const [aiError, setAiError] = useState('');
 
   // Extracted Bill Form Data
   const [merchant, setMerchant] = useState('');
@@ -78,40 +125,57 @@ export default function BillUploadModal({ onClose, onRefresh }) {
   };
 
   // Run AI / Mock Recognition Workflow
-  const startAIScan = (imgData) => {
+  const startAIScan = async (imgData) => {
     setIsScanning(true);
+    setAiError('');
     setScanStep(1);
 
-    // Simulate multi-stage AI inference
-    setTimeout(() => {
+    const apiKey = localStorage.getItem('deepseek_api_key');
+
+    if (apiKey) {
+      // Real DeepSeek Vision recognition
       setScanStep(2);
-    }, 700);
+      try {
+        const result = await parseBillWithDeepSeek(imgData, apiKey);
+        setScanStep(3);
 
-    setTimeout(() => {
-      setScanStep(3);
-
-      // Check if user has Gemini API Key or use realistic Mock OCR
-      if (geminiApiKey) {
-        // Here we could call Gemini 1.5/2.0 multimodal endpoint
-        console.log('Gemini API configured:', geminiApiKey.slice(0, 6) + '***');
+        const now = new Date();
+        setMerchant(result.merchant || '');
+        setAmount(result.amount != null ? String(result.amount) : '');
+        setCategory(result.category || '餐饮美食');
+        setPayMethod(result.payMethod || '微信支付');
+        setBillDate(result.date || now.toISOString().split('T')[0]);
+        setBillTime(
+          result.time ||
+          now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+        );
+      } catch (err) {
+        setAiError(err.message || 'DeepSeek 识别失败，请检查 API Key');
+        setScanStep(0);
+        useMockOCR();
+      } finally {
+        setIsScanning(false);
       }
+    } else {
+      // No API key → animated mock OCR
+      setTimeout(() => setScanStep(2), 700);
+      setTimeout(() => {
+        setScanStep(3);
+        useMockOCR();
+        setIsScanning(false);
+      }, 1500);
+    }
+  };
 
-      // Pick a realistic mock receipt recognition matching common apps
-      const template =
-        MOCK_OCR_TEMPLATES[Math.floor(Math.random() * MOCK_OCR_TEMPLATES.length)];
-
-      const now = new Date();
-      const timeStr = now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
-      const dateStr = now.toISOString().split('T')[0];
-
-      setMerchant(template.merchant);
-      setAmount(template.amount.toFixed(2));
-      setCategory(template.category);
-      setPayMethod(template.payMethod);
-      setBillDate(dateStr);
-      setBillTime(timeStr);
-      setIsScanning(false);
-    }, 1500);
+  const useMockOCR = () => {
+    const template = MOCK_OCR_TEMPLATES[Math.floor(Math.random() * MOCK_OCR_TEMPLATES.length)];
+    const now = new Date();
+    setMerchant(template.merchant);
+    setAmount(template.amount.toFixed(2));
+    setCategory(template.category);
+    setPayMethod(template.payMethod);
+    setBillDate(now.toISOString().split('T')[0]);
+    setBillTime(now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }));
   };
 
   const handleSaveBill = (e) => {
@@ -136,10 +200,12 @@ export default function BillUploadModal({ onClose, onRefresh }) {
   };
 
   const handleSaveApiKey = () => {
-    localStorage.setItem('gemini_api_key', geminiApiKey);
+    localStorage.setItem('deepseek_api_key', deepseekApiKey);
     setShowApiKeySetting(false);
-    alert('Gemini API Key 已保存！识别账单时将优先调用多模态大模型。');
+    alert('DeepSeek API Key 已保存！下次识别账单将调用真实 AI 视觉模型。');
   };
+
+  const hasKey = Boolean(localStorage.getItem('deepseek_api_key'));
 
   return (
     <div className="overlay" onClick={onClose}>
@@ -152,16 +218,14 @@ export default function BillUploadModal({ onClose, onRefresh }) {
             <div className="w-7 h-7 rounded-lg bg-[#34C759]/15 flex items-center justify-center">
               <Sparkles size={16} className="text-[#34C759]" />
             </div>
-            <div>
-              <h2 className="text-base font-bold text-[#1A1A2E]">截图智能识别记账</h2>
-            </div>
+            <h2 className="text-base font-bold text-[#1A1A2E]">截图智能识别记账</h2>
           </div>
 
           <div className="flex items-center gap-2">
             <button
               onClick={() => setShowApiKeySetting(!showApiKeySetting)}
-              className="p-1.5 rounded-full hover:bg-gray-100 text-[#8E8E9A]"
-              title="配置 Gemini API Key"
+              className={`p-1.5 rounded-full hover:bg-gray-100 transition ${hasKey ? 'text-[#34C759]' : 'text-[#8E8E9A]'}`}
+              title="配置 DeepSeek API Key"
             >
               <KeyRound size={17} />
             </button>
@@ -174,36 +238,46 @@ export default function BillUploadModal({ onClose, onRefresh }) {
           </div>
         </div>
 
-        {/* Optional Gemini API Key Drawer */}
+        {/* DeepSeek API Key Drawer */}
         {showApiKeySetting && (
-          <div className="p-3 mb-4 rounded-xl bg-purple-50 border border-purple-200 text-xs text-purple-900 animate-slide-up">
+          <div className="p-3 mb-4 rounded-xl bg-blue-50 border border-blue-200 text-xs text-blue-900 animate-slide-up">
             <div className="flex items-center justify-between mb-1.5">
               <span className="font-bold flex items-center gap-1">
-                <Sparkles size={13} /> Gemini 多模态 API 配置
+                <Sparkles size={13} /> DeepSeek 视觉 API 配置
               </span>
-              <span className="text-[10px] text-purple-700 bg-purple-200/60 px-1.5 py-0.5 rounded">
-                可选
+              <span className="text-[10px] text-blue-700 bg-blue-200/60 px-1.5 py-0.5 rounded">
+                {hasKey ? '✓ 已配置' : '可选'}
               </span>
             </div>
-            <p className="text-[11px] text-purple-700 mb-2">
-              填写 Gemini API Key 可实时调用官方大模型解析账单，未填写时系统默认使用高精度 Mock OCR 仿真演示引擎。
+            <p className="text-[11px] text-blue-700 mb-2">
+              填写 DeepSeek API Key 后，上传截图将调用真实 AI 视觉模型精准提取账单信息。未填写时使用高精度 Mock 演示。
+              <br />
+              Key 可在 <span className="font-semibold">platform.deepseek.com</span> 申请。
             </p>
             <div className="flex gap-2">
               <input
                 type="password"
-                placeholder="AIzaSy..."
-                value={geminiApiKey}
-                onChange={(e) => setGeminiApiKey(e.target.value)}
-                className="flex-1 px-3 py-1.5 bg-white border border-purple-200 rounded-lg text-xs outline-none"
+                placeholder="sk-..."
+                value={deepseekApiKey}
+                onChange={(e) => setDeepseekApiKey(e.target.value)}
+                className="flex-1 px-3 py-1.5 bg-white border border-blue-200 rounded-lg text-xs outline-none focus:border-blue-400"
               />
               <button
                 type="button"
                 onClick={handleSaveApiKey}
-                className="px-3 py-1.5 bg-purple-600 text-white font-semibold rounded-lg text-xs"
+                className="px-3 py-1.5 bg-blue-600 text-white font-semibold rounded-lg text-xs"
               >
                 保存
               </button>
             </div>
+          </div>
+        )}
+
+        {/* AI Error Banner */}
+        {aiError && (
+          <div className="mb-3 p-2.5 rounded-xl bg-red-50 border border-red-200 text-xs text-red-700 flex items-center gap-2">
+            <AlertCircle size={14} className="flex-shrink-0" />
+            <span>{aiError}（已使用 Mock 演示数据）</span>
           </div>
         )}
 
@@ -220,7 +294,9 @@ export default function BillUploadModal({ onClose, onRefresh }) {
               点击上传微信 / 支付宝 / 银行付款截图
             </p>
             <p className="text-xs text-[#8E8E9A] max-w-xs">
-              AI 自动识别商户名称、扣款金额、交易时间并精准匹配消费分类
+              {hasKey
+                ? 'DeepSeek AI 视觉模型自动识别商户、金额、时间与分类'
+                : 'AI 自动识别商户名称、扣款金额、交易时间并精准匹配消费分类'}
             </p>
             <input
               ref={fileInputRef}
@@ -238,14 +314,14 @@ export default function BillUploadModal({ onClose, onRefresh }) {
               className="max-h-44 object-contain rounded-xl"
             />
 
-            {/* AI Scanning Laser Effect */}
+            {/* AI Scanning Effect */}
             {isScanning && (
               <div className="absolute inset-0 bg-black/30 backdrop-blur-xs flex flex-col items-center justify-center text-white">
                 <div className="w-full absolute top-0 left-0 h-1 bg-gradient-to-r from-transparent via-[#34C759] to-transparent animate-pulse" />
                 <RefreshCw size={26} className="animate-spin text-[#34C759] mb-2" />
                 <p className="text-xs font-bold tracking-wider">
                   {scanStep === 1 && '正在读取截图图像点阵...'}
-                  {scanStep === 2 && '多模态 AI 智能提取消费要素...'}
+                  {scanStep === 2 && (hasKey ? 'DeepSeek AI 视觉模型识别中...' : '多模态 AI 智能提取消费要素...')}
                   {scanStep === 3 && '识别完成，生成结构化账单'}
                 </p>
               </div>
@@ -271,18 +347,18 @@ export default function BillUploadModal({ onClose, onRefresh }) {
           </div>
         )}
 
-        {/* AI Extracted Result / Manual Confirmation Form */}
+        {/* Confirmation Form */}
         <form onSubmit={handleSaveBill} className="space-y-3.5">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-[#8E8E9A]">核对并确认账单明细</span>
             {amount && !isScanning && (
               <span className="inline-flex items-center gap-1 text-[11px] font-bold text-[#34C759] bg-emerald-50 px-2 py-0.5 rounded-full">
-                <Check size={12} /> AI 智能识别成功
+                <Check size={12} /> {hasKey ? 'DeepSeek AI 识别成功' : 'AI 智能识别成功'}
               </span>
             )}
           </div>
 
-          {/* Amount (Big prominent input) */}
+          {/* Amount */}
           <div className="p-3 rounded-2xl bg-[#F8F9FA] border border-gray-100">
             <label className="text-[11px] font-bold text-[#8E8E9A] block mb-1">消费金额 (¥)</label>
             <div className="flex items-center gap-1">
@@ -299,7 +375,7 @@ export default function BillUploadModal({ onClose, onRefresh }) {
             </div>
           </div>
 
-          {/* Merchant name */}
+          {/* Merchant */}
           <div>
             <label className="text-xs font-bold text-[#4A4A52] block mb-1">商户 / 交易说明</label>
             <input
@@ -312,7 +388,7 @@ export default function BillUploadModal({ onClose, onRefresh }) {
             />
           </div>
 
-          {/* Category Pills Selector */}
+          {/* Category Pills */}
           <div>
             <label className="text-xs font-bold text-[#4A4A52] block mb-1.5">智能分类</label>
             <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-1">
@@ -336,7 +412,7 @@ export default function BillUploadModal({ onClose, onRefresh }) {
             </div>
           </div>
 
-          {/* Date, Time & Payment Method */}
+          {/* Date, Time & Pay Method */}
           <div className="grid grid-cols-3 gap-2">
             <div>
               <label className="text-[11px] font-bold text-[#8E8E9A] block mb-1">日期</label>

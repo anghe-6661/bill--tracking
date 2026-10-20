@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import { X, Camera, Sparkles, Upload, Check } from 'lucide-react';
+import { X, Camera, Upload, Sparkles, RefreshCw, Check } from 'lucide-react';
 import { addItem, updateItem, getSettings } from '../store';
 
 const PRESET_ICONS = [
@@ -13,9 +13,65 @@ const PRESET_ICONS = [
   { emoji: '☕', color: '#EDE0D4', label: '生活' },
 ];
 
+const CATEGORY_MAP = {
+  '数码': '数码', '电脑': '数码', '手机': '数码', '相机': '数码', '手表': '数码', '耳机': '数码',
+  '出行': '出行', '汽车': '出行', '单车': '出行',
+  '服装': '服装', '鞋': '服装', '包': '服装',
+  '家居': '家居', '家具': '家居',
+  '运动': '运动', '健身': '运动',
+};
+
+// Call DeepSeek Vision API to identify item from image
+async function recognizeItemWithDeepSeek(base64Image, apiKey) {
+  // Extract base64 data (remove data URL prefix)
+  const base64Data = base64Image.split(',')[1];
+  const mimeType = base64Image.split(';')[0].split(':')[1] || 'image/jpeg';
+
+  const response = await fetch('https://api.deepseek.com/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: 'deepseek-chat',
+      messages: [
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'image_url',
+              image_url: {
+                url: `data:${mimeType};base64,${base64Data}`,
+              },
+            },
+            {
+              type: 'text',
+              text: '请识别这张图片中的物品，用中文简洁回答。仅返回一个 JSON 对象，格式：{"name":"物品完整名称（含品牌型号）","category":"数码/出行/服装/家居/运动/其他 之一","confidence":"high/medium/low"}。不要返回任何其他文字。',
+            },
+          ],
+        },
+      ],
+      max_tokens: 200,
+    }),
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err?.error?.message || `API 错误 ${response.status}`);
+  }
+
+  const data = await response.json();
+  const text = data.choices?.[0]?.message?.content || '';
+
+  // Parse JSON from response
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) throw new Error('无法解析识别结果');
+  return JSON.parse(jsonMatch[0]);
+}
+
 export default function ItemEditModal({ item, onClose, onRefresh }) {
   const isEdit = Boolean(item);
-  const settings = getSettings();
   const fileInputRef = useRef(null);
 
   const [name, setName] = useState(item?.name || '');
@@ -28,14 +84,43 @@ export default function ItemEditModal({ item, onClose, onRefresh }) {
   const [image, setImage] = useState(item?.image || null);
   const [imageColor, setImageColor] = useState(item?.imageColor || '#F0F0F4');
 
-  // Handle local image file upload & convert to Base64
-  const handleFileChange = (e) => {
+  // AI recognition states
+  const [isRecognizing, setIsRecognizing] = useState(false);
+  const [aiResult, setAiResult] = useState(null); // null | 'success' | 'error'
+  const [aiError, setAiError] = useState('');
+
+  // Handle local image file upload, convert to Base64, then call AI if key present
+  const handleFileChange = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = () => {
-      setImage(reader.result);
+    reader.onload = async () => {
+      const base64 = reader.result;
+      setImage(base64);
+      setAiResult(null);
+      setAiError('');
+
+      const apiKey = localStorage.getItem('deepseek_api_key');
+      if (!apiKey) return; // no key → just show image, no recognition
+
+      setIsRecognizing(true);
+      try {
+        const result = await recognizeItemWithDeepSeek(base64, apiKey);
+        if (result.name) setName(result.name);
+        if (result.category) {
+          // map to our category keys
+          const mappedCat = CATEGORY_MAP[result.category] || result.category;
+          const validCats = ['数码', '出行', '服装', '家居', '运动', '其他'];
+          if (validCats.includes(mappedCat)) setCategory(mappedCat);
+        }
+        setAiResult('success');
+      } catch (err) {
+        setAiError(err.message || 'AI 识别失败');
+        setAiResult('error');
+      } finally {
+        setIsRecognizing(false);
+      }
     };
     reader.readAsDataURL(file);
   };
@@ -72,9 +157,12 @@ export default function ItemEditModal({ item, onClose, onRefresh }) {
     onClose();
   };
 
+  const hasDeepSeekKey = Boolean(localStorage.getItem('deepseek_api_key'));
+
   return (
     <div className="overlay" onClick={onClose}>
-      <div className="modal-sheet" onClick={(e) => e.stopPropagation()}>
+      {/* max-h-[92dvh] ensures modal never extends off-screen; overflow-y:auto handles scroll */}
+      <div className="modal-sheet max-h-[92dvh]" onClick={(e) => e.stopPropagation()}>
         <div className="modal-handle" />
 
         <div className="flex items-center justify-between mb-4">
@@ -89,7 +177,7 @@ export default function ItemEditModal({ item, onClose, onRefresh }) {
           </button>
         </div>
 
-        <form onSubmit={handleSave} className="space-y-4">
+        <form onSubmit={handleSave} className="space-y-4 pb-2">
           {/* Photo Preview / Upload */}
           <div className="flex items-center gap-4 p-3 rounded-2xl bg-[#F8F9FA] border border-gray-100">
             <div
@@ -108,7 +196,7 @@ export default function ItemEditModal({ item, onClose, onRefresh }) {
               )}
             </div>
 
-            <div className="flex-1">
+            <div className="flex-1 min-w-0">
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
@@ -124,7 +212,24 @@ export default function ItemEditModal({ item, onClose, onRefresh }) {
                 className="hidden"
                 onChange={handleFileChange}
               />
-              <p className="text-[11px] text-[#8E8E9A] mt-1">支持拍摄或上传带拍立得质感照片</p>
+              {/* AI recognition status */}
+              {isRecognizing ? (
+                <p className="text-[11px] text-[#007AFF] mt-1.5 flex items-center gap-1 font-semibold">
+                  <RefreshCw size={11} className="animate-spin" />
+                  DeepSeek AI 正在识别物品…
+                </p>
+              ) : aiResult === 'success' ? (
+                <p className="text-[11px] text-[#34C759] mt-1.5 flex items-center gap-1 font-semibold">
+                  <Check size={11} />
+                  AI 识别成功，已自动填写名称
+                </p>
+              ) : aiResult === 'error' ? (
+                <p className="text-[11px] text-[#FF3B30] mt-1.5 font-medium">⚠ {aiError}</p>
+              ) : (
+                <p className="text-[11px] text-[#8E8E9A] mt-1">
+                  {hasDeepSeekKey ? '上传后 AI 自动识别物品名称' : '支持拍摄或上传带拍立得质感照片'}
+                </p>
+              )}
             </div>
           </div>
 
@@ -140,6 +245,7 @@ export default function ItemEditModal({ item, onClose, onRefresh }) {
                     setImage(null);
                     setImageColor(p.color);
                     setCategory(p.label);
+                    setAiResult(null);
                   }}
                   className="w-9 h-9 rounded-xl flex items-center justify-center text-base flex-shrink-0 border transition-transform active:scale-90"
                   style={{
