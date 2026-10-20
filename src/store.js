@@ -2,9 +2,9 @@ import { DEMO_ITEM_IMAGES } from './assets/demoImages';
 
 // Data store using localStorage with initial demo data
 const STORAGE_KEYS = {
-  ITEMS: 'youshu_items',
-  BILLS: 'youshu_bills',
-  SETTINGS: 'youshu_settings',
+  ITEMS: 'bill_items',
+  BILLS: 'bill_bills',
+  SETTINGS: 'bill_settings',
 };
 
 // ── Initial Demo Items matching the screenshot ──
@@ -159,7 +159,17 @@ const DEFAULT_SETTINGS = {
 // ── Helpers ──
 function loadData(key, fallback) {
   try {
-    const raw = localStorage.getItem(key);
+    let raw = localStorage.getItem(key);
+    // Backward compatibility: migrate legacy youshu_ keys if bill_ keys are not set yet
+    if (!raw && key.startsWith('bill_')) {
+      const legacyKey = key.replace('bill_', 'youshu_');
+      const legacyRaw = localStorage.getItem(legacyKey);
+      if (legacyRaw) {
+        raw = legacyRaw;
+        localStorage.setItem(key, legacyRaw);
+        localStorage.removeItem(legacyKey);
+      }
+    }
     if (raw) return JSON.parse(raw);
   } catch (e) {
     console.warn(`Failed to load ${key}:`, e);

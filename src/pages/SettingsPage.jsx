@@ -1,4 +1,3 @@
-import { useState, useRef } from 'react';
 import {
   Download,
   Upload,
@@ -13,6 +12,8 @@ import {
   Eye,
   EyeOff,
   Sparkles,
+  RefreshCw,
+  Cpu,
 } from 'lucide-react';
 import {
   getSettings,
@@ -30,23 +31,46 @@ export default function SettingsPage({ onRefresh }) {
   const [dailyBudget, setDailyBudget] = useState(settings.dailyBudget || 150);
   const [successMsg, setSuccessMsg] = useState('');
 
-  // DeepSeek API Key
+  // DeepSeek API Configuration
   const [deepseekKey, setDeepseekKey] = useState(
     localStorage.getItem('deepseek_api_key') || ''
   );
+  const [deepseekModel, setDeepseekModel] = useState(
+    localStorage.getItem('deepseek_model') || 'deepseek-flash'
+  );
+  const [deepseekBaseUrl, setDeepseekBaseUrl] = useState(
+    localStorage.getItem('deepseek_base_url') || 'https://api.deepseek.com'
+  );
   const [showKey, setShowKey] = useState(false);
+  const [showAdvancedAi, setShowAdvancedAi] = useState(false);
   const hasDeepSeekKey = Boolean(localStorage.getItem('deepseek_api_key'));
 
-  const handleSaveDeepSeekKey = (e) => {
+  const handleSaveDeepSeekConfig = (e) => {
     e.preventDefault();
-    localStorage.setItem('deepseek_api_key', deepseekKey);
-    showToast(deepseekKey ? 'DeepSeek API Key 已保存！AI 识图功能已激活。' : 'API Key 已清除，将使用 Mock 演示模式。');
+    localStorage.setItem('deepseek_api_key', deepseekKey.trim());
+    localStorage.setItem('deepseek_model', (deepseekModel || 'deepseek-flash').trim());
+    localStorage.setItem('deepseek_base_url', (deepseekBaseUrl || 'https://api.deepseek.com').trim());
+    showToast(deepseekKey ? 'DeepSeek 配置已保存！识图大模型已就绪。' : 'API Key 已清空，将使用演示模式。');
   };
 
   const handleClearDeepSeekKey = () => {
     localStorage.removeItem('deepseek_api_key');
     setDeepseekKey('');
     showToast('DeepSeek API Key 已清除。');
+  };
+
+  const handleForceReload = () => {
+    try {
+      if ('caches' in window) {
+        caches.keys().then((names) => {
+          names.forEach((name) => caches.delete(name));
+        });
+      }
+    } catch (_) {}
+    showToast('正在清空缓存并重新载入最新版本...');
+    setTimeout(() => {
+      window.location.reload(true);
+    }, 500);
   };
 
   const showToast = (msg) => {
@@ -100,9 +124,9 @@ export default function SettingsPage({ onRefresh }) {
   };
 
   const handleClear = () => {
-    if (confirm('⚠️ 高危操作：确定清空所有本地数据吗？此操作不可撤销！')) {
+    if (confirm('⚠️ 高危操作：确定清空全部本地数据吗？此操作不可撤销！')) {
       clearAllData();
-      showToast('所有数据已清空。');
+      showToast('本地记录已全部清空。');
       onRefresh();
     }
   };
@@ -166,33 +190,97 @@ export default function SettingsPage({ onRefresh }) {
           )}
         </div>
         <p className="text-[11px] text-[#8E8E9A] mb-3 leading-relaxed">
-          配置后，上传账单截图 / 添加物品图片时将调用 DeepSeek 视觉大模型真实识别，告别 Mock 演示。
-          Key 可在{' '}
-          <span className="text-[#007AFF] font-semibold">platform.deepseek.com</span> 免费申请。
+          配置后，上传账单截图 / 添加物品图片时将调用视觉大模型真实识别。
+          官方识图主力大模型为 <strong className="text-[#007AFF]">deepseek-flash</strong>（注：deepseek-chat 为纯文本模型不支持图像）。
         </p>
-        <form onSubmit={handleSaveDeepSeekKey} className="space-y-2">
-          <div className="relative flex items-center">
-            <input
-              type={showKey ? 'text' : 'password'}
-              placeholder="sk-..."
-              value={deepseekKey}
-              onChange={(e) => setDeepseekKey(e.target.value)}
-              className="w-full px-3 py-2.5 pr-10 bg-[#F8F9FA] border border-gray-200 rounded-xl text-xs font-mono outline-none focus:border-[#007AFF] transition"
-            />
+
+        <form onSubmit={handleSaveDeepSeekConfig} className="space-y-2.5">
+          {/* API Key */}
+          <div>
+            <label className="text-[11px] font-semibold text-[#4A4A52] mb-1 block">API Key (令牌)</label>
+            <div className="relative flex items-center">
+              <input
+                type={showKey ? 'text' : 'password'}
+                placeholder="sk-..."
+                value={deepseekKey}
+                onChange={(e) => setDeepseekKey(e.target.value)}
+                className="w-full px-3 py-2 pr-10 bg-[#F8F9FA] border border-gray-200 rounded-xl text-xs font-mono outline-none focus:border-[#007AFF] transition"
+              />
+              <button
+                type="button"
+                onClick={() => setShowKey(!showKey)}
+                className="absolute right-3 text-[#8E8E9A] hover:text-[#1A1A2E] transition"
+              >
+                {showKey ? <EyeOff size={15} /> : <Eye size={15} />}
+              </button>
+            </div>
+          </div>
+
+          {/* Model Name */}
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-[11px] font-semibold text-[#4A4A52] block">识图大模型 (Model Name)</label>
+              <div className="flex gap-1">
+                <button
+                  type="button"
+                  onClick={() => setDeepseekModel('deepseek-flash')}
+                  className="text-[10px] px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded hover:bg-blue-100 transition"
+                >
+                  官方 flash
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDeepseekModel('deepseek-ai/deepseek-vl2');
+                    setDeepseekBaseUrl('https://api.siliconflow.cn/v1');
+                  }}
+                  className="text-[10px] px-1.5 py-0.5 bg-purple-50 text-purple-600 rounded hover:bg-purple-100 transition"
+                >
+                  硅基流动 VL2
+                </button>
+              </div>
+            </div>
+            <div className="relative flex items-center">
+              <Cpu size={14} className="absolute left-3 text-gray-400" />
+              <input
+                type="text"
+                placeholder="deepseek-flash"
+                value={deepseekModel}
+                onChange={(e) => setDeepseekModel(e.target.value)}
+                className="w-full pl-8 pr-3 py-2 bg-[#F8F9FA] border border-gray-200 rounded-xl text-xs font-mono outline-none focus:border-[#007AFF] transition"
+              />
+            </div>
+          </div>
+
+          {/* Advanced toggle */}
+          <div>
             <button
               type="button"
-              onClick={() => setShowKey(!showKey)}
-              className="absolute right-3 text-[#8E8E9A] hover:text-[#1A1A2E] transition"
+              onClick={() => setShowAdvancedAi(!showAdvancedAi)}
+              className="text-[11px] text-[#007AFF] hover:underline flex items-center gap-1"
             >
-              {showKey ? <EyeOff size={15} /> : <Eye size={15} />}
+              {showAdvancedAi ? '隐藏高级设置 ▲' : '自定义 API 接口地址 (Base URL) ▼'}
             </button>
+            {showAdvancedAi && (
+              <div className="mt-1.5 pt-1.5 border-t border-gray-100">
+                <label className="text-[10px] text-[#8E8E9A] mb-1 block">API Base URL (默认为官方接口)</label>
+                <input
+                  type="text"
+                  placeholder="https://api.deepseek.com"
+                  value={deepseekBaseUrl}
+                  onChange={(e) => setDeepseekBaseUrl(e.target.value)}
+                  className="w-full px-3 py-1.5 bg-[#F8F9FA] border border-gray-200 rounded-lg text-xs font-mono outline-none focus:border-[#007AFF] transition"
+                />
+              </div>
+            )}
           </div>
-          <div className="flex gap-2">
+
+          <div className="flex gap-2 pt-1">
             <button
               type="submit"
               className="flex-1 py-2 rounded-xl bg-[#007AFF] text-white text-xs font-bold shadow-xs active:scale-95 transition"
             >
-              保存 API Key
+              保存 AI 配置
             </button>
             {hasDeepSeekKey && (
               <button
@@ -255,9 +343,24 @@ export default function SettingsPage({ onRefresh }) {
             className="flex items-center justify-center gap-1 p-2 rounded-lg text-[11px] font-semibold text-red-500 hover:bg-red-50"
           >
             <Trash2 size={12} />
-            <span>清空所有数据</span>
+            <span>清空全部本地数据</span>
           </button>
         </div>
+      </div>
+
+      {/* ── 缓存更新与刷新 ── */}
+      <div className="card p-4 mb-4 border border-gray-100 flex items-center justify-between">
+        <div>
+          <h3 className="text-xs font-bold text-[#1A1A2E]">网页版本与更新</h3>
+          <p className="text-[11px] text-[#8E8E9A]">若页面未同步最新功能，可清除缓存强制载入</p>
+        </div>
+        <button
+          onClick={handleForceReload}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-[#F5F6F8] hover:bg-gray-200 text-xs font-bold text-[#1A1A2E] rounded-xl active:scale-95 transition"
+        >
+          <RefreshCw size={13} />
+          <span>强制刷新</span>
+        </button>
       </div>
 
       {/* ── iPhone iOS PWA 安装指南 ── */}
@@ -297,7 +400,7 @@ export default function SettingsPage({ onRefresh }) {
 
       {/* ── 关于本应用 ── */}
       <div className="p-4 text-center text-[#8E8E9A] text-xs space-y-1">
-        <p className="font-bold text-[#1A1A2E]">C · 个人财务与物品日均成本工作台</p>
+        <p className="font-bold text-[#1A1A2E]">Bill · 个人财务与物品日均成本工作台</p>
         <p>Version 1.0.0 · Designed for iPhone</p>
         <p className="text-[11px] opacity-75">Clean & Minimalist Design</p>
       </div>

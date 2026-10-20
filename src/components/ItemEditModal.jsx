@@ -26,15 +26,18 @@ async function recognizeItemWithDeepSeek(base64Image, apiKey) {
   // Extract base64 data (remove data URL prefix)
   const base64Data = base64Image.split(',')[1];
   const mimeType = base64Image.split(';')[0].split(':')[1] || 'image/jpeg';
+  const model = localStorage.getItem('deepseek_model') || 'deepseek-flash';
+  const baseUrl = (localStorage.getItem('deepseek_base_url') || 'https://api.deepseek.com').replace(/\/+$/, '');
+  const url = baseUrl.endsWith('/chat/completions') ? baseUrl : `${baseUrl}/chat/completions`;
 
-  const response = await fetch('https://api.deepseek.com/chat/completions', {
+  const response = await fetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: 'deepseek-chat',
+      model: model,
       messages: [
         {
           role: 'user',
@@ -58,7 +61,8 @@ async function recognizeItemWithDeepSeek(base64Image, apiKey) {
 
   if (!response.ok) {
     const err = await response.json().catch(() => ({}));
-    throw new Error(err?.error?.message || `API 错误 ${response.status}`);
+    const errMsg = err?.error?.message || err?.message || `HTTP ${response.status} 错误`;
+    throw new Error(errMsg);
   }
 
   const data = await response.json();
@@ -66,7 +70,7 @@ async function recognizeItemWithDeepSeek(base64Image, apiKey) {
 
   // Parse JSON from response
   const jsonMatch = text.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) throw new Error('无法解析识别结果');
+  if (!jsonMatch) throw new Error('无法解析识别结果: ' + text.slice(0, 100));
   return JSON.parse(jsonMatch[0]);
 }
 
@@ -177,7 +181,7 @@ export default function ItemEditModal({ item, onClose, onRefresh }) {
           </button>
         </div>
 
-        <form onSubmit={handleSave} className="space-y-4 pb-2">
+        <form onSubmit={handleSave} className="space-y-4 pb-6">
           {/* Photo Preview / Upload */}
           <div className="flex items-center gap-4 p-3 rounded-2xl bg-[#F8F9FA] border border-gray-100">
             <div

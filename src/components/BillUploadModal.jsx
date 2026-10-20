@@ -46,15 +46,18 @@ const MOCK_OCR_TEMPLATES = [
 async function parseBillWithDeepSeek(base64Image, apiKey) {
   const base64Data = base64Image.split(',')[1];
   const mimeType = base64Image.split(';')[0].split(':')[1] || 'image/jpeg';
+  const model = localStorage.getItem('deepseek_model') || 'deepseek-flash';
+  const baseUrl = (localStorage.getItem('deepseek_base_url') || 'https://api.deepseek.com').replace(/\/+$/, '');
+  const url = baseUrl.endsWith('/chat/completions') ? baseUrl : `${baseUrl}/chat/completions`;
 
-  const response = await fetch('https://api.deepseek.com/chat/completions', {
+  const response = await fetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: 'deepseek-chat',
+      model: model,
       messages: [
         {
           role: 'user',
@@ -78,13 +81,14 @@ async function parseBillWithDeepSeek(base64Image, apiKey) {
 
   if (!response.ok) {
     const err = await response.json().catch(() => ({}));
-    throw new Error(err?.error?.message || `API 错误 ${response.status}`);
+    const errMsg = err?.error?.message || err?.message || `HTTP ${response.status} 错误`;
+    throw new Error(errMsg);
   }
 
   const data = await response.json();
   const text = data.choices?.[0]?.message?.content || '';
   const jsonMatch = text.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) throw new Error('无法解析识别结果');
+  if (!jsonMatch) throw new Error('AI 返回内容无法解析为账单数据: ' + text.slice(0, 100));
   return JSON.parse(jsonMatch[0]);
 }
 
@@ -150,9 +154,8 @@ export default function BillUploadModal({ onClose, onRefresh }) {
           now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
         );
       } catch (err) {
-        setAiError(err.message || 'DeepSeek 识别失败，请检查 API Key');
+        setAiError(err.message || 'DeepSeek 识别失败，请检查 API Key 或模型配置');
         setScanStep(0);
-        useMockOCR();
       } finally {
         setIsScanning(false);
       }
@@ -275,9 +278,25 @@ export default function BillUploadModal({ onClose, onRefresh }) {
 
         {/* AI Error Banner */}
         {aiError && (
-          <div className="mb-3 p-2.5 rounded-xl bg-red-50 border border-red-200 text-xs text-red-700 flex items-center gap-2">
-            <AlertCircle size={14} className="flex-shrink-0" />
-            <span>{aiError}（已使用 Mock 演示数据）</span>
+          <div className="mb-3 p-3 rounded-xl bg-red-50 border border-red-200 text-xs text-red-700 flex flex-col gap-1.5 animate-slide-up">
+            <div className="flex items-center gap-1.5 font-bold">
+              <AlertCircle size={15} className="flex-shrink-0 text-red-500" />
+              <span>DeepSeek 识图失败</span>
+            </div>
+            <p className="text-[11px] text-red-600 font-mono break-all leading-normal">{aiError}</p>
+            <div className="pt-1 flex items-center justify-between border-t border-red-100">
+              <span className="text-[10px] text-red-500">提示：官方大模型请确保使用 deepseek-flash</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setAiError('');
+                  useMockOCR();
+                }}
+                className="text-[11px] font-semibold text-blue-600 hover:underline"
+              >
+                使用模拟数据填充 →
+              </button>
+            </div>
           </div>
         )}
 
