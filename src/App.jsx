@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import './index.css';
 import BottomNav from './components/BottomNav';
 import ItemsPage from './pages/ItemsPage';
@@ -8,6 +8,7 @@ import SettingsPage from './pages/SettingsPage';
 import AddModal from './components/AddModal';
 import ItemEditModal from './components/ItemEditModal';
 import BillUploadModal from './components/BillUploadModal';
+import { pullFromCloud } from './sync';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('items');
@@ -19,6 +20,41 @@ export default function App() {
   const refresh = useCallback(() => {
     setRefreshKey((k) => k + 1);
   }, []);
+
+  // ── Auto Cloud Sync Lifecycle ──
+  useEffect(() => {
+    // Initial pull on start
+    pullFromCloud().catch(() => {});
+
+    // Listen to background sync update event
+    const handleSynced = () => {
+      refresh();
+    };
+    window.addEventListener('bill-data-synced', handleSynced);
+
+    // Pull when tab/screen becomes visible or focused
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        pullFromCloud().catch(() => {});
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('focus', handleVisibility);
+
+    // Periodic check every 45 seconds while active
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        pullFromCloud().catch(() => {});
+      }
+    }, 45000);
+
+    return () => {
+      window.removeEventListener('bill-data-synced', handleSynced);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('focus', handleVisibility);
+      clearInterval(timer);
+    };
+  }, [refresh]);
 
   const renderPage = () => {
     switch (activeTab) {

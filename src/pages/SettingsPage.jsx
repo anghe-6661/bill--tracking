@@ -1,3 +1,4 @@
+import { useState, useRef } from 'react';
 import {
   Download,
   Upload,
@@ -14,6 +15,12 @@ import {
   Sparkles,
   RefreshCw,
   Cpu,
+  Cloud,
+  CloudUpload,
+  CloudDownload,
+  Check,
+  Shuffle,
+  Lock,
 } from 'lucide-react';
 import {
   getSettings,
@@ -23,6 +30,12 @@ import {
   resetToDemoData,
   clearAllData,
 } from '../store';
+import {
+  getSyncConfig,
+  saveSyncConfig,
+  pushToCloud,
+  pullFromCloud,
+} from '../sync';
 
 export default function SettingsPage({ onRefresh }) {
   const settings = getSettings();
@@ -30,6 +43,87 @@ export default function SettingsPage({ onRefresh }) {
 
   const [dailyBudget, setDailyBudget] = useState(settings.dailyBudget || 150);
   const [successMsg, setSuccessMsg] = useState('');
+
+  // ── Cloud Sync Configuration ──
+  const [syncConfig, setSyncConfig] = useState(getSyncConfig());
+  const [syncPassphrase, setSyncPassphrase] = useState(syncConfig.passphrase || '');
+  const [showSyncPass, setShowSyncPass] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const isSyncActive = Boolean(syncConfig.passphrase);
+
+  const handleSaveSync = async (e) => {
+    e.preventDefault();
+    const cleanPass = syncPassphrase.trim();
+    if (!cleanPass) {
+      saveSyncConfig({ passphrase: '' });
+      setSyncConfig(getSyncConfig());
+      showToast('已关闭云端同步。');
+      return;
+    }
+
+    saveSyncConfig({ passphrase: cleanPass });
+    setSyncConfig(getSyncConfig());
+    setIsSyncing(true);
+    try {
+      // First attempt pull: if cloud has remote data for this passphrase, sync it down
+      const res = await pullFromCloud();
+      if (res.updated) {
+        showToast('已连接云端！检测到云端有数据，已成功拉取最新记录。');
+        onRefresh();
+      } else {
+        // If not, push local data to cloud
+        await pushToCloud();
+        showToast('云端同步已开启！当前数据已备份至云端。');
+      }
+    } catch (err) {
+      showToast('同步提示: ' + (err.message || '网络异常'));
+    } finally {
+      setIsSyncing(false);
+      setSyncConfig(getSyncConfig());
+    }
+  };
+
+  const handleManualPush = async () => {
+    if (!syncConfig.passphrase) return;
+    setIsSyncing(true);
+    try {
+      await pushToCloud();
+      showToast('✓ 已成功将本地最新数据上传至云端！');
+      setSyncConfig(getSyncConfig());
+    } catch (err) {
+      alert('上传失败: ' + err.message);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const handleManualPull = async () => {
+    if (!syncConfig.passphrase) return;
+    setIsSyncing(true);
+    try {
+      const res = await pullFromCloud();
+      if (res.updated) {
+        showToast('✓ 已成功从云端拉取并更新数据！');
+        onRefresh();
+      } else {
+        showToast('本地数据已是最新。');
+      }
+      setSyncConfig(getSyncConfig());
+    } catch (err) {
+      alert('拉取失败: ' + err.message);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const handleGenerateRandomKey = () => {
+    const chars = 'abcdefghjkmnpqrstuvwxyz23456789';
+    let code = 'bill-';
+    for (let i = 0; i < 6; i++) {
+      code += chars[Math.floor(Math.random() * chars.length)];
+    }
+    setSyncPassphrase(code);
+  };
 
   // DeepSeek API Configuration
   const [deepseekKey, setDeepseekKey] = useState(
@@ -173,6 +267,124 @@ export default function SettingsPage({ onRefresh }) {
           >
             保存每日预算
           </button>
+        </form>
+      </div>
+
+      {/* ── 云端多端自动同步配置 ── */}
+      <div className="card p-4 mb-4 border border-blue-100 bg-gradient-to-br from-white via-blue-50/20 to-emerald-50/20 shadow-xs">
+        <div className="flex items-center justify-between mb-1.5">
+          <div className="flex items-center gap-2">
+            <Cloud size={18} className="text-[#007AFF]" />
+            <h2 className="text-sm font-bold text-[#1A1A2E]">手机与电脑多端同步</h2>
+          </div>
+          <span
+            className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${
+              isSyncActive
+                ? 'text-[#34C759] bg-emerald-50 border border-emerald-200'
+                : 'text-gray-500 bg-gray-100 border border-gray-200'
+            }`}
+          >
+            {isSyncActive ? (
+              <>
+                <span className="w-1.5 h-1.5 rounded-full bg-[#34C759] animate-pulse" />
+                已连通云端
+              </>
+            ) : (
+              '未配置'
+            )}
+          </span>
+        </div>
+
+        <p className="text-[11px] text-[#4A4A52] leading-relaxed mb-3">
+          在手机和电脑上输入<strong>相同的同步口令</strong>，即可实现多端自动双向同步。添加或更新账单/物品时自动上传，打开网页自动拉取最新数据。
+        </p>
+
+        <form onSubmit={handleSaveSync} className="space-y-3">
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-[11px] font-semibold text-[#4A4A52] flex items-center gap-1">
+                <Lock size={12} className="text-gray-500" />
+                <span>自定义同步口令 / 秘钥</span>
+              </label>
+              <button
+                type="button"
+                onClick={handleGenerateRandomKey}
+                className="text-[10px] font-semibold text-[#007AFF] hover:underline flex items-center gap-0.5"
+              >
+                <Shuffle size={10} /> 随机生成一个
+              </button>
+            </div>
+            <div className="relative flex items-center">
+              <input
+                type={showSyncPass ? 'text' : 'password'}
+                placeholder="例如：chen-2026-xyz"
+                value={syncPassphrase}
+                onChange={(e) => setSyncPassphrase(e.target.value)}
+                className="w-full px-3 py-2 pr-10 bg-white border border-gray-200 rounded-xl text-xs font-mono outline-none focus:border-[#007AFF] transition shadow-2xs"
+              />
+              <button
+                type="button"
+                onClick={() => setShowSyncPass(!showSyncPass)}
+                className="absolute right-3 text-[#8E8E9A] hover:text-[#1A1A2E] transition"
+              >
+                {showSyncPass ? <EyeOff size={15} /> : <Eye size={15} />}
+              </button>
+            </div>
+          </div>
+
+          <div className="flex gap-2">
+            <button
+              type="submit"
+              disabled={isSyncing}
+              className="flex-1 py-2.5 rounded-xl bg-[#007AFF] text-white text-xs font-bold shadow-xs active:scale-95 transition flex items-center justify-center gap-1.5 disabled:opacity-50"
+            >
+              {isSyncing ? (
+                <>
+                  <RefreshCw size={13} className="animate-spin" />
+                  <span>正在连接同步…</span>
+                </>
+              ) : (
+                <>
+                  <Cloud size={14} />
+                  <span>{isSyncActive ? '更新口令并同步' : '开启云端同步'}</span>
+                </>
+              )}
+            </button>
+          </div>
+
+          {isSyncActive && (
+            <div className="pt-2 border-t border-gray-100 flex items-center justify-between text-xs">
+              <div className="text-[11px] text-[#8E8E9A]">
+                {syncConfig.lastSyncTime
+                  ? `上次同步: ${new Date(syncConfig.lastSyncTime).toLocaleTimeString('zh-CN', {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                      second: '2-digit',
+                    })}`
+                  : '已配置自动同步'}
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={handleManualPull}
+                  disabled={isSyncing}
+                  className="px-2.5 py-1 rounded-lg bg-white border border-gray-200 text-[11px] font-semibold text-[#1A1A2E] hover:bg-gray-50 flex items-center gap-1 active:scale-95 transition"
+                >
+                  <CloudDownload size={12} className="text-blue-600" />
+                  <span>手动拉取</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleManualPush}
+                  disabled={isSyncing}
+                  className="px-2.5 py-1 rounded-lg bg-white border border-gray-200 text-[11px] font-semibold text-[#1A1A2E] hover:bg-gray-50 flex items-center gap-1 active:scale-95 transition"
+                >
+                  <CloudUpload size={12} className="text-emerald-600" />
+                  <span>强制上传</span>
+                </button>
+              </div>
+            </div>
+          )}
         </form>
       </div>
 

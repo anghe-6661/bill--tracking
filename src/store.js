@@ -1,4 +1,5 @@
 import { DEMO_ITEM_IMAGES } from './assets/demoImages';
+import { triggerDebouncedPush } from './sync';
 
 // Data store using localStorage with initial demo data
 const STORAGE_KEYS = {
@@ -180,6 +181,8 @@ function loadData(key, fallback) {
 function saveData(key, data) {
   try {
     localStorage.setItem(key, JSON.stringify(data));
+    localStorage.setItem('bill_last_updated', Date.now().toString());
+    triggerDebouncedPush();
   } catch (e) {
     console.warn(`Failed to save ${key}:`, e);
   }
