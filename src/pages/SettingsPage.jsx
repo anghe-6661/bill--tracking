@@ -33,6 +33,7 @@ import {
 import {
   getSyncConfig,
   saveSyncConfig,
+  clearSyncConfig,
   pushToCloud,
   pullFromCloud,
 } from '../sync';
@@ -44,36 +45,35 @@ export default function SettingsPage({ onRefresh }) {
   const [dailyBudget, setDailyBudget] = useState(settings.dailyBudget || 150);
   const [successMsg, setSuccessMsg] = useState('');
 
-  // ── Cloud Sync Configuration ──
+  // ── GitHub Gist Cloud Sync Configuration ──
   const [syncConfig, setSyncConfig] = useState(getSyncConfig());
-  const [syncPassphrase, setSyncPassphrase] = useState(syncConfig.passphrase || '');
-  const [showSyncPass, setShowSyncPass] = useState(false);
+  const [syncToken, setSyncToken] = useState(syncConfig.token || '');
+  const [showSyncToken, setShowSyncToken] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
-  const isSyncActive = Boolean(syncConfig.passphrase);
+  const [showTokenHelp, setShowTokenHelp] = useState(false);
+  const isSyncActive = Boolean(syncConfig.token);
 
   const handleSaveSync = async (e) => {
     e.preventDefault();
-    const cleanPass = syncPassphrase.trim();
-    if (!cleanPass) {
-      saveSyncConfig({ passphrase: '' });
+    const cleanToken = syncToken.trim();
+    if (!cleanToken) {
+      clearSyncConfig();
       setSyncConfig(getSyncConfig());
-      showToast('已关闭云端同步。');
+      showToast('已断开 GitHub 云端同步。');
       return;
     }
 
-    saveSyncConfig({ passphrase: cleanPass });
+    saveSyncConfig({ token: cleanToken });
     setSyncConfig(getSyncConfig());
     setIsSyncing(true);
     try {
-      // First attempt pull: if cloud has remote data for this passphrase, sync it down
       const res = await pullFromCloud();
       if (res.updated) {
-        showToast('已连接云端！检测到云端有数据，已成功拉取最新记录。');
+        showToast('✓ 已连接 GitHub Gist！已同步云端最新记录。');
         onRefresh();
       } else {
-        // If not, push local data to cloud
         await pushToCloud();
-        showToast('云端同步已开启！当前数据已备份至云端。');
+        showToast('✓ 已连接 GitHub Gist！本地数据已备份至云端。');
       }
     } catch (err) {
       showToast('同步提示: ' + (err.message || '网络异常'));
@@ -83,12 +83,19 @@ export default function SettingsPage({ onRefresh }) {
     }
   };
 
+  const handleDisconnectSync = () => {
+    clearSyncConfig();
+    setSyncToken('');
+    setSyncConfig(getSyncConfig());
+    showToast('已清除 GitHub Token，断开云端同步。');
+  };
+
   const handleManualPush = async () => {
-    if (!syncConfig.passphrase) return;
+    if (!syncConfig.token) return;
     setIsSyncing(true);
     try {
       await pushToCloud();
-      showToast('✓ 已成功将本地最新数据上传至云端！');
+      showToast('✓ 已成功将本地最新数据推送至 GitHub Gist！');
       setSyncConfig(getSyncConfig());
     } catch (err) {
       alert('上传失败: ' + err.message);
@@ -98,12 +105,12 @@ export default function SettingsPage({ onRefresh }) {
   };
 
   const handleManualPull = async () => {
-    if (!syncConfig.passphrase) return;
+    if (!syncConfig.token) return;
     setIsSyncing(true);
     try {
       const res = await pullFromCloud();
       if (res.updated) {
-        showToast('✓ 已成功从云端拉取并更新数据！');
+        showToast('✓ 已成功从 GitHub Gist 拉取并更新最新数据！');
         onRefresh();
       } else {
         showToast('本地数据已是最新。');
@@ -114,15 +121,6 @@ export default function SettingsPage({ onRefresh }) {
     } finally {
       setIsSyncing(false);
     }
-  };
-
-  const handleGenerateRandomKey = () => {
-    const chars = 'abcdefghjkmnpqrstuvwxyz23456789';
-    let code = 'bill-';
-    for (let i = 0; i < 6; i++) {
-      code += chars[Math.floor(Math.random() * chars.length)];
-    }
-    setSyncPassphrase(code);
   };
 
   // DeepSeek API Configuration
@@ -270,12 +268,12 @@ export default function SettingsPage({ onRefresh }) {
         </form>
       </div>
 
-      {/* ── 云端多端自动同步配置 ── */}
-      <div className="card p-4 mb-4 border border-blue-100 bg-gradient-to-br from-white via-blue-50/20 to-emerald-50/20 shadow-xs">
+      {/* ── GitHub Gist 私有多端同步配置 ── */}
+      <div className="card p-4 mb-4 border border-blue-100 bg-gradient-to-br from-white via-blue-50/20 to-purple-50/20 shadow-xs">
         <div className="flex items-center justify-between mb-1.5">
           <div className="flex items-center gap-2">
             <Cloud size={18} className="text-[#007AFF]" />
-            <h2 className="text-sm font-bold text-[#1A1A2E]">手机与电脑多端同步</h2>
+            <h2 className="text-sm font-bold text-[#1A1A2E]">GitHub Gist 私有多端同步</h2>
           </div>
           <span
             className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${
@@ -287,7 +285,7 @@ export default function SettingsPage({ onRefresh }) {
             {isSyncActive ? (
               <>
                 <span className="w-1.5 h-1.5 rounded-full bg-[#34C759] animate-pulse" />
-                已连通云端
+                已连通私有云
               </>
             ) : (
               '未配置'
@@ -296,7 +294,7 @@ export default function SettingsPage({ onRefresh }) {
         </div>
 
         <p className="text-[11px] text-[#4A4A52] leading-relaxed mb-3">
-          在手机和电脑上输入<strong>相同的同步口令</strong>，即可实现多端自动双向同步。添加或更新账单/物品时自动上传，打开网页自动拉取最新数据。
+          使用您的 GitHub 账号（私有 Gist）实现手机与电脑实时同步。数据永久保存在您自己的账号下，安全私密，告别第三方服务阻断。
         </p>
 
         <form onSubmit={handleSaveSync} className="space-y-3">
@@ -304,30 +302,41 @@ export default function SettingsPage({ onRefresh }) {
             <div className="flex items-center justify-between mb-1">
               <label className="text-[11px] font-semibold text-[#4A4A52] flex items-center gap-1">
                 <Lock size={12} className="text-gray-500" />
-                <span>自定义同步口令 / 秘钥</span>
+                <span>GitHub Token (令牌)</span>
               </label>
               <button
                 type="button"
-                onClick={handleGenerateRandomKey}
-                className="text-[10px] font-semibold text-[#007AFF] hover:underline flex items-center gap-0.5"
+                onClick={() => setShowTokenHelp(!showTokenHelp)}
+                className="text-[10px] font-semibold text-[#007AFF] hover:underline"
               >
-                <Shuffle size={10} /> 随机生成一个
+                {showTokenHelp ? '收起教程 ▲' : '如何免费获取？20秒搞定 ▼'}
               </button>
             </div>
+
+            {/* Token Guide Drawer */}
+            {showTokenHelp && (
+              <div className="mb-2 p-2.5 rounded-xl bg-blue-50/80 border border-blue-200/60 text-[11px] text-blue-900 space-y-1 leading-normal animate-slide-up">
+                <p className="font-bold">仅需 3 步获取您的私有同步令牌：</p>
+                <p>1. 浏览器打开 <a href="https://github.com/settings/tokens" target="_blank" rel="noreferrer" className="underline font-semibold text-blue-700">github.com/settings/tokens</a>；</p>
+                <p>2. 点击 <strong>Generate new token (classic)</strong>；</p>
+                <p>3. 仅勾选 <strong>「gist」</strong> 权限（其他都不用选），点击底部绿色按钮生成并复制粘贴至下方即可。</p>
+              </div>
+            )}
+
             <div className="relative flex items-center">
               <input
-                type={showSyncPass ? 'text' : 'password'}
-                placeholder="例如：chen-2026-xyz"
-                value={syncPassphrase}
-                onChange={(e) => setSyncPassphrase(e.target.value)}
+                type={showSyncToken ? 'text' : 'password'}
+                placeholder="ghp_..."
+                value={syncToken}
+                onChange={(e) => setSyncToken(e.target.value)}
                 className="w-full px-3 py-2 pr-10 bg-white border border-gray-200 rounded-xl text-xs font-mono outline-none focus:border-[#007AFF] transition shadow-2xs"
               />
               <button
                 type="button"
-                onClick={() => setShowSyncPass(!showSyncPass)}
+                onClick={() => setShowSyncToken(!showSyncToken)}
                 className="absolute right-3 text-[#8E8E9A] hover:text-[#1A1A2E] transition"
               >
-                {showSyncPass ? <EyeOff size={15} /> : <Eye size={15} />}
+                {showSyncToken ? <EyeOff size={15} /> : <Eye size={15} />}
               </button>
             </div>
           </div>
@@ -341,15 +350,24 @@ export default function SettingsPage({ onRefresh }) {
               {isSyncing ? (
                 <>
                   <RefreshCw size={13} className="animate-spin" />
-                  <span>正在连接同步…</span>
+                  <span>正在连接 GitHub…</span>
                 </>
               ) : (
                 <>
                   <Cloud size={14} />
-                  <span>{isSyncActive ? '更新口令并同步' : '开启云端同步'}</span>
+                  <span>{isSyncActive ? '更新 Token 并同步' : '开启 GitHub 私有同步'}</span>
                 </>
               )}
             </button>
+            {isSyncActive && (
+              <button
+                type="button"
+                onClick={handleDisconnectSync}
+                className="px-3 py-2.5 rounded-xl bg-red-50 text-red-500 text-xs font-semibold border border-red-200 active:scale-95 transition"
+              >
+                断开
+              </button>
+            )}
           </div>
 
           {isSyncActive && (
@@ -371,7 +389,7 @@ export default function SettingsPage({ onRefresh }) {
                   className="px-2.5 py-1 rounded-lg bg-white border border-gray-200 text-[11px] font-semibold text-[#1A1A2E] hover:bg-gray-50 flex items-center gap-1 active:scale-95 transition"
                 >
                   <CloudDownload size={12} className="text-blue-600" />
-                  <span>手动拉取</span>
+                  <span>拉取云端</span>
                 </button>
                 <button
                   type="button"
@@ -380,7 +398,7 @@ export default function SettingsPage({ onRefresh }) {
                   className="px-2.5 py-1 rounded-lg bg-white border border-gray-200 text-[11px] font-semibold text-[#1A1A2E] hover:bg-gray-50 flex items-center gap-1 active:scale-95 transition"
                 >
                   <CloudUpload size={12} className="text-emerald-600" />
-                  <span>强制上传</span>
+                  <span>推送到云</span>
                 </button>
               </div>
             </div>
