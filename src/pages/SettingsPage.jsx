@@ -543,7 +543,7 @@ export default function SettingsPage({ onRefresh }) {
             ) : !hasDeepSeekKey && !showAiForm ? (
               <div>
                 <p className="text-[11px] text-[#8E8E9A] leading-relaxed mb-3">
-                  配置后，上传账单截图或物品照片时会自动识别。
+                  配置后，上传账单截图时会自动识别商户、金额和分类。
                 </p>
                 <button
                   type="button"
