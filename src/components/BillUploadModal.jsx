@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
 import { X, Upload, Sparkles, Check, AlertCircle, Camera, RefreshCw, KeyRound } from 'lucide-react';
-import { addBill, CATEGORY_ICONS } from '../store';
+import { addBill, CATEGORY_ICONS, getSettings, getCategoryIcon } from '../store';
+import { recognizeJsonFromImage } from '../ai';
 
 // Mock OCR samples to simulate AI recognition from various payment receipts
 const MOCK_OCR_TEMPLATES = [
@@ -42,54 +43,11 @@ const MOCK_OCR_TEMPLATES = [
   },
 ];
 
-// Call DeepSeek Vision API to parse a payment screenshot
-async function parseBillWithDeepSeek(base64Image, apiKey) {
-  const base64Data = base64Image.split(',')[1];
-  const mimeType = base64Image.split(';')[0].split(':')[1] || 'image/jpeg';
-  const model = localStorage.getItem('deepseek_model') || 'deepseek-flash';
-  const baseUrl = (localStorage.getItem('deepseek_base_url') || 'https://api.deepseek.com').replace(/\/+$/, '');
-  const url = baseUrl.endsWith('/chat/completions') ? baseUrl : `${baseUrl}/chat/completions`;
+const BILL_RECOGNIZE_PROMPT =
+  '这是一张支付截图（微信支付/支付宝/银行转账/小红书等）。请提取消费信息，仅返回一个 JSON 对象，格式：{"merchant":"商户或交易说明","amount":金额数字,"category":"餐饮美食/交通出行/日常购物/娱乐/医疗健康/数码订阅/其他 之一","payMethod":"微信支付/支付宝/银行卡/现金/其他 之一","date":"YYYY-MM-DD格式日期","time":"HH:MM格式时间"}。无法识别的字段填null。不要返回其他文字。';
 
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: model,
-      messages: [
-        {
-          role: 'user',
-          content: [
-            {
-              type: 'image_url',
-              image_url: {
-                url: `data:${mimeType};base64,${base64Data}`,
-              },
-            },
-            {
-              type: 'text',
-              text: '这是一张支付截图（微信支付/支付宝/银行转账等）。请提取消费信息，仅返回一个 JSON 对象，格式：{"merchant":"商户或交易说明","amount":金额数字,"category":"餐饮美食/交通出行/日常购物/娱乐/医疗健康/数码订阅/其他 之一","payMethod":"微信支付/支付宝/银行卡/现金/其他 之一","date":"YYYY-MM-DD格式日期","time":"HH:MM格式时间"}。无法识别的字段填null。不要返回其他文字。',
-            },
-          ],
-        },
-      ],
-      max_tokens: 300,
-    }),
-  });
-
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({}));
-    const errMsg = err?.error?.message || err?.message || `HTTP ${response.status} 错误`;
-    throw new Error(errMsg);
-  }
-
-  const data = await response.json();
-  const text = data.choices?.[0]?.message?.content || '';
-  const jsonMatch = text.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) throw new Error('AI 返回内容无法解析为账单数据: ' + text.slice(0, 100));
-  return JSON.parse(jsonMatch[0]);
+function parseBillWithDeepSeek(base64Image, apiKey) {
+  return recognizeJsonFromImage(base64Image, apiKey, BILL_RECOGNIZE_PROMPT);
 }
 
 export default function BillUploadModal({ onClose, onRefresh }) {
@@ -144,8 +102,12 @@ export default function BillUploadModal({ onClose, onRefresh }) {
         setScanStep(3);
 
         const now = new Date();
+        const amountValue =
+          result.amount == null
+            ? ''
+            : String(result.amount).replace(/[^\d.-]/g, '');
         setMerchant(result.merchant || '');
-        setAmount(result.amount != null ? String(result.amount) : '');
+        setAmount(amountValue);
         setCategory(result.category || '餐饮美食');
         setPayMethod(result.payMethod || '微信支付');
         setBillDate(result.date || now.toISOString().split('T')[0]);
@@ -164,13 +126,13 @@ export default function BillUploadModal({ onClose, onRefresh }) {
       setTimeout(() => setScanStep(2), 700);
       setTimeout(() => {
         setScanStep(3);
-        useMockOCR();
+        fillMockBill();
         setIsScanning(false);
       }, 1500);
     }
   };
 
-  const useMockOCR = () => {
+  const fillMockBill = () => {
     const template = MOCK_OCR_TEMPLATES[Math.floor(Math.random() * MOCK_OCR_TEMPLATES.length)];
     const now = new Date();
     setMerchant(template.merchant);
@@ -283,14 +245,14 @@ export default function BillUploadModal({ onClose, onRefresh }) {
               <AlertCircle size={15} className="flex-shrink-0 text-red-500" />
               <span>DeepSeek 识图失败</span>
             </div>
-            <p className="text-[11px] text-red-600 font-mono break-all leading-normal">{aiError}</p>
+            <p className="text-[11px] text-red-600 leading-normal">{aiError}</p>
             <div className="pt-1 flex items-center justify-between border-t border-red-100">
-              <span className="text-[10px] text-red-500">提示：官方大模型请确保使用 deepseek-flash</span>
+              <span className="text-[10px] text-red-500">也可以直接在下方手动填写后保存</span>
               <button
                 type="button"
                 onClick={() => {
                   setAiError('');
-                  useMockOCR();
+                  fillMockBill();
                 }}
                 className="text-[11px] font-semibold text-blue-600 hover:underline"
               >
@@ -411,23 +373,21 @@ export default function BillUploadModal({ onClose, onRefresh }) {
           <div>
             <label className="text-xs font-bold text-[#4A4A52] block mb-1.5">智能分类</label>
             <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-1">
-              {['餐饮美食', '交通出行', '数码订阅', '日常购物', '娱乐', '医疗健康', '其他'].map(
-                (cat) => (
-                  <button
-                    key={cat}
-                    type="button"
-                    onClick={() => setCategory(cat)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all flex items-center gap-1 ${
-                      category === cat
-                        ? 'bg-[#1A1A2E] text-white shadow-xs'
-                        : 'bg-[#F2F2F7] text-[#4A4A52] hover:bg-gray-200'
-                    }`}
-                  >
-                    <span>{CATEGORY_ICONS[cat] || '📦'}</span>
-                    <span>{cat}</span>
-                  </button>
-                )
-              )}
+              {(getSettings().categories || Object.keys(CATEGORY_ICONS)).map((cat) => (
+                <button
+                  key={cat}
+                  type="button"
+                  onClick={() => setCategory(cat)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all flex items-center gap-1 ${
+                    category === cat
+                      ? 'bg-[#1A1A2E] text-white shadow-xs'
+                      : 'bg-[#F2F2F7] text-[#4A4A52] hover:bg-gray-200'
+                  }`}
+                >
+                  <span>{getCategoryIcon(cat)}</span>
+                  <span>{cat}</span>
+                </button>
+              ))}
             </div>
           </div>
 

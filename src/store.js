@@ -151,11 +151,32 @@ const DEMO_BILLS = [
   },
 ];
 
+export const DEFAULT_CATEGORIES = [
+  '餐饮美食',
+  '交通出行',
+  '数码订阅',
+  '日常购物',
+  '娱乐',
+  '医疗健康',
+  '其他',
+];
+
 const DEFAULT_SETTINGS = {
   dailyBudget: 150,
   currency: '¥',
-  categories: ['餐饮美食', '交通出行', '数码订阅', '日常购物', '娱乐', '医疗健康', '其他'],
+  categories: [...DEFAULT_CATEGORIES],
+  categoryBudgets: {
+    餐饮美食: 50,
+    日常购物: 40,
+    交通出行: 30,
+  },
 };
+
+export const MONTHLY_BILL_CATEGORIES = ['数码订阅'];
+
+export function isMonthlyBillCategory(name) {
+  return MONTHLY_BILL_CATEGORIES.includes(name);
+}
 
 // ── Helpers ──
 function loadData(key, fallback) {
@@ -254,12 +275,40 @@ export function deleteBill(id) {
   return bills;
 }
 
+export function normalizeSettings(raw = {}) {
+  const categories = Array.isArray(raw.categories) && raw.categories.length > 0
+    ? raw.categories.filter((name) => typeof name === 'string' && name.trim())
+    : [...DEFAULT_CATEGORIES];
+
+  const categoryBudgets = {};
+  const sourceBudgets =
+    raw.categoryBudgets && typeof raw.categoryBudgets === 'object'
+      ? raw.categoryBudgets
+      : {};
+  Object.entries(sourceBudgets).forEach(([name, amount]) => {
+    const value = parseFloat(amount);
+    if (!name || isMonthlyBillCategory(name) || !Number.isFinite(value) || value <= 0) {
+      return;
+    }
+    categoryBudgets[name] = value;
+  });
+
+  const extraCats = Object.keys(categoryBudgets).filter((name) => !categories.includes(name));
+  return {
+    ...DEFAULT_SETTINGS,
+    ...raw,
+    dailyBudget: parseFloat(raw.dailyBudget) > 0 ? parseFloat(raw.dailyBudget) : DEFAULT_SETTINGS.dailyBudget,
+    categories: [...categories, ...extraCats],
+    categoryBudgets,
+  };
+}
+
 export function getSettings() {
-  return loadData(STORAGE_KEYS.SETTINGS, DEFAULT_SETTINGS);
+  return normalizeSettings(loadData(STORAGE_KEYS.SETTINGS, DEFAULT_SETTINGS));
 }
 
 export function saveSettings(settings) {
-  saveData(STORAGE_KEYS.SETTINGS, settings);
+  saveData(STORAGE_KEYS.SETTINGS, normalizeSettings(settings));
 }
 
 // ── Calculations ──
@@ -288,7 +337,30 @@ export function getTodayBills(bills) {
 }
 
 export function getTodaySpent(bills) {
-  return getTodayBills(bills).reduce((sum, b) => sum + b.amount, 0);
+  return getTodayBills(bills)
+    .filter((bill) => !isMonthlyBillCategory(bill.category))
+    .reduce((sum, b) => sum + b.amount, 0);
+}
+
+export function getTodaySpentByCategory(bills) {
+  const map = {};
+  getTodayBills(bills).forEach((bill) => {
+    const cat = bill.category || '其他';
+    if (isMonthlyBillCategory(cat)) return;
+    map[cat] = (map[cat] || 0) + bill.amount;
+  });
+  return map;
+}
+
+export function getMonthSpent(bills, category) {
+  const monthPrefix = new Date().toISOString().split('T')[0].slice(0, 7);
+  return bills
+    .filter((bill) => {
+      if (!bill.date?.startsWith(monthPrefix)) return false;
+      if (category) return bill.category === category;
+      return true;
+    })
+    .reduce((sum, bill) => sum + bill.amount, 0);
 }
 
 // ── Export / Import ──
@@ -345,3 +417,18 @@ export const CATEGORY_COLORS = {
   '医疗健康': '#45B7D1',
   '其他': '#95A5A6',
 };
+
+const CUSTOM_CATEGORY_COLORS = ['#5B8DEF', '#F06595', '#20C997', '#FAB005', '#845EF7', '#FD7E14'];
+
+export function getCategoryIcon(name) {
+  return CATEGORY_ICONS[name] || '📦';
+}
+
+export function getCategoryColor(name) {
+  if (CATEGORY_COLORS[name]) return CATEGORY_COLORS[name];
+  let hash = 0;
+  for (let i = 0; i < name.length; i += 1) {
+    hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
+  }
+  return CUSTOM_CATEGORY_COLORS[hash % CUSTOM_CATEGORY_COLORS.length];
+}

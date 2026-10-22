@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
-import { X, Camera, Upload, Sparkles, RefreshCw, Check } from 'lucide-react';
-import { addItem, updateItem, getSettings } from '../store';
+import { X, Camera, Upload, RefreshCw, Check } from 'lucide-react';
+import { addItem, updateItem } from '../store';
+import { recognizeJsonFromImage } from '../ai';
 
 const PRESET_ICONS = [
   { emoji: '📱', color: '#D4DDE8', label: '数码' },
@@ -21,57 +22,11 @@ const CATEGORY_MAP = {
   '运动': '运动', '健身': '运动',
 };
 
-// Call DeepSeek Vision API to identify item from image
-async function recognizeItemWithDeepSeek(base64Image, apiKey) {
-  // Extract base64 data (remove data URL prefix)
-  const base64Data = base64Image.split(',')[1];
-  const mimeType = base64Image.split(';')[0].split(':')[1] || 'image/jpeg';
-  const model = localStorage.getItem('deepseek_model') || 'deepseek-flash';
-  const baseUrl = (localStorage.getItem('deepseek_base_url') || 'https://api.deepseek.com').replace(/\/+$/, '');
-  const url = baseUrl.endsWith('/chat/completions') ? baseUrl : `${baseUrl}/chat/completions`;
+const ITEM_RECOGNIZE_PROMPT =
+  '请识别这张图片中的物品，用中文简洁回答。仅返回一个 JSON 对象，格式：{"name":"物品完整名称（含品牌型号）","category":"数码/出行/服装/家居/运动/其他 之一","confidence":"high/medium/low"}。不要返回任何其他文字。';
 
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: model,
-      messages: [
-        {
-          role: 'user',
-          content: [
-            {
-              type: 'image_url',
-              image_url: {
-                url: `data:${mimeType};base64,${base64Data}`,
-              },
-            },
-            {
-              type: 'text',
-              text: '请识别这张图片中的物品，用中文简洁回答。仅返回一个 JSON 对象，格式：{"name":"物品完整名称（含品牌型号）","category":"数码/出行/服装/家居/运动/其他 之一","confidence":"high/medium/low"}。不要返回任何其他文字。',
-            },
-          ],
-        },
-      ],
-      max_tokens: 200,
-    }),
-  });
-
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({}));
-    const errMsg = err?.error?.message || err?.message || `HTTP ${response.status} 错误`;
-    throw new Error(errMsg);
-  }
-
-  const data = await response.json();
-  const text = data.choices?.[0]?.message?.content || '';
-
-  // Parse JSON from response
-  const jsonMatch = text.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) throw new Error('无法解析识别结果: ' + text.slice(0, 100));
-  return JSON.parse(jsonMatch[0]);
+function recognizeItemWithDeepSeek(base64Image, apiKey) {
+  return recognizeJsonFromImage(base64Image, apiKey, ITEM_RECOGNIZE_PROMPT);
 }
 
 export default function ItemEditModal({ item, onClose, onRefresh }) {

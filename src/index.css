@@ -320,6 +320,14 @@ body {
   background: white;
 }
 
+select.input-field {
+  padding: 11px 12px;
+  font-size: 13px;
+  appearance: auto;
+  -webkit-appearance: auto;
+  cursor: pointer;
+}
+
 /* ── Utility ── */
 .text-price {
   font-variant-numeric: tabular-nums;

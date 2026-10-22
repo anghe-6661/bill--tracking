@@ -16,6 +16,7 @@ import {
   calcCostPerDay,
   CATEGORY_ICONS,
   CATEGORY_COLORS,
+  isMonthlyBillCategory,
 } from '../store';
 
 export default function TrendsPage() {
@@ -76,7 +77,7 @@ export default function TrendsPage() {
 
       // Sum bills on this date
       const spent = bills
-        .filter((b) => b.date === dateStr)
+        .filter((b) => b.date === dateStr && !isMonthlyBillCategory(b.category))
         .reduce((sum, b) => sum + b.amount, 0);
 
       days.push({

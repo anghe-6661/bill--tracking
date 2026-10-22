@@ -19,10 +19,14 @@ import {
   getSettings,
   saveSettings,
   getTodaySpent,
-  CATEGORY_ICONS,
-  CATEGORY_COLORS,
+  getTodaySpentByCategory,
+  getMonthSpent,
+  getCategoryIcon,
+  getCategoryColor,
+  isMonthlyBillCategory,
 } from '../store';
 import BillUploadModal from '../components/BillUploadModal';
+import BudgetEditor from '../components/BudgetEditor';
 
 export default function BillsPage({ onRefresh }) {
   const bills = getBills();
@@ -30,7 +34,6 @@ export default function BillsPage({ onRefresh }) {
 
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [showBudgetModal, setShowBudgetModal] = useState(false);
-  const [budgetInput, setBudgetInput] = useState(settings.dailyBudget || 150);
   const [previewImage, setPreviewImage] = useState(null);
 
   // Group bills by date
@@ -59,15 +62,33 @@ export default function BillsPage({ onRefresh }) {
   const todaySpent = getTodaySpent(bills);
   const dailyBudget = settings.dailyBudget || 150;
   const remainingBudget = dailyBudget - todaySpent;
-  const spentRatio = Math.min(todaySpent / dailyBudget, 1);
+  const spentRatio = dailyBudget > 0 ? Math.min(todaySpent / dailyBudget, 1) : 0;
   const isOverspent = todaySpent > dailyBudget;
   const isWarning = !isOverspent && remainingBudget / dailyBudget <= 0.2;
+  const spentByCategory = getTodaySpentByCategory(bills);
+  const categoryRows = useMemo(() => {
+    const names = new Set([
+      ...Object.keys(settings.categoryBudgets || {}),
+      ...Object.keys(spentByCategory),
+    ]);
+    return Array.from(names)
+      .map((name) => {
+        const budget = Number(settings.categoryBudgets?.[name]) || 0;
+        const spent = spentByCategory[name] || 0;
+        return {
+          name,
+          budget,
+          spent,
+          remaining: budget - spent,
+          hasBudget: budget > 0,
+        };
+      })
+      .filter((row) => !isMonthlyBillCategory(row.name) && (row.hasBudget || row.spent > 0))
+      .sort((a, b) => Number(b.hasBudget) - Number(a.hasBudget) || b.spent - a.spent);
+  }, [settings.categoryBudgets, spentByCategory]);
 
-  // Monthly spent
-  const currentMonthPrefix = todayStr.slice(0, 7);
-  const monthTotal = bills
-    .filter((b) => b.date?.startsWith(currentMonthPrefix))
-    .reduce((sum, b) => sum + b.amount, 0);
+  const monthTotal = getMonthSpent(bills);
+  const monthSubscriptions = getMonthSpent(bills, '数码订阅');
 
   // Progress bar color & status text
   let progressColor = '#34C759'; // green
@@ -93,10 +114,8 @@ export default function BillsPage({ onRefresh }) {
     };
   }
 
-  const handleUpdateBudget = (e) => {
-    e.preventDefault();
-    const newBudget = parseFloat(budgetInput) || 150;
-    saveSettings({ ...settings, dailyBudget: newBudget });
+  const handleUpdateBudget = (next) => {
+    saveSettings({ ...settings, ...next });
     setShowBudgetModal(false);
     onRefresh();
   };
@@ -147,10 +166,7 @@ export default function BillsPage({ onRefresh }) {
             <span className="text-xs font-bold text-[#8E8E9A]">今日预算额度</span>
             <span className="text-xs font-semibold text-[#1A1A2E]">¥{dailyBudget.toFixed(2)}</span>
             <button
-              onClick={() => {
-                setBudgetInput(dailyBudget);
-                setShowBudgetModal(true);
-              }}
+              onClick={() => setShowBudgetModal(true)}
               className="p-1 rounded-md hover:bg-gray-100 text-[#8E8E9A] transition"
               title="修改预算"
             >
@@ -197,17 +213,72 @@ export default function BillsPage({ onRefresh }) {
             />
           </div>
           <div className="flex items-center justify-between text-[11px] text-[#8E8E9A] font-medium">
-            <span>已消费 ¥{todaySpent.toFixed(2)} ({((todaySpent / dailyBudget) * 100).toFixed(0)}%)</span>
+            <span>已消费 ¥{todaySpent.toFixed(2)} ({dailyBudget > 0 ? ((todaySpent / dailyBudget) * 100).toFixed(0) : 0}%)</span>
             <span>预算上限 ¥{dailyBudget.toFixed(2)}</span>
           </div>
         </div>
+
+        {categoryRows.length === 0 && (
+          <button
+            type="button"
+            onClick={() => setShowBudgetModal(true)}
+            className="w-full mb-4 py-2 rounded-xl bg-[#F8F9FA] text-[11px] font-semibold text-[#4A4A52]"
+          >
+            为吃饭、购物等添加分类额度
+          </button>
+        )}
+
+        {categoryRows.length > 0 && (
+          <div className="space-y-2.5 mb-4 pt-1">
+            {categoryRows.map((row) => {
+              const color = getCategoryColor(row.name);
+              const ratio = row.hasBudget ? Math.min(row.spent / row.budget, 1) : 0;
+              const over = row.hasBudget && row.spent > row.budget;
+              return (
+                <div key={row.name}>
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span
+                        className="w-6 h-6 rounded-lg flex items-center justify-center text-[12px] flex-shrink-0"
+                        style={{ background: `${color}18` }}
+                      >
+                        {getCategoryIcon(row.name)}
+                      </span>
+                      <span className="text-xs font-semibold text-[#1A1A2E] truncate">{row.name}</span>
+                    </div>
+                    {row.hasBudget ? (
+                      <span className={`text-[11px] font-bold text-price ${over ? 'text-[#FF3B30]' : 'text-[#4A4A52]'}`}>
+                        {over
+                          ? `超支 ¥${(row.spent - row.budget).toFixed(2)}`
+                          : `剩 ¥${row.remaining.toFixed(2)}`}
+                      </span>
+                    ) : (
+                      <span className="text-[11px] font-semibold text-[#8E8E9A]">未设额度 · ¥{row.spent.toFixed(2)}</span>
+                    )}
+                  </div>
+                  {row.hasBudget && (
+                    <div className="h-1.5 rounded-full bg-[#E5E6EB] overflow-hidden">
+                      <div
+                        className="h-full rounded-full transition-all"
+                        style={{
+                          width: `${Math.min(ratio * 100, 100)}%`,
+                          backgroundColor: over ? '#FF3B30' : color,
+                        }}
+                      />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         {/* Bottom stats row */}
         <div className="grid grid-cols-3 gap-2 pt-3 border-t border-gray-100 text-center">
           <div>
             <p className="text-[10px] text-[#8E8E9A] mb-0.5">今日笔数</p>
             <p className="text-xs font-extrabold text-[#1A1A2E]">
-              {bills.filter((b) => b.date === todayStr).length} 笔
+              {bills.filter((b) => b.date === todayStr && !isMonthlyBillCategory(b.category)).length} 笔
             </p>
           </div>
           <div className="border-x border-gray-100">
@@ -215,13 +286,8 @@ export default function BillsPage({ onRefresh }) {
             <p className="text-xs font-extrabold text-[#1A1A2E]">¥{monthTotal.toFixed(2)}</p>
           </div>
           <div>
-            <p className="text-[10px] text-[#8E8E9A] mb-0.5">平均单笔</p>
-            <p className="text-xs font-extrabold text-[#1A1A2E]">
-              ¥
-              {bills.length > 0
-                ? (bills.reduce((s, b) => s + b.amount, 0) / bills.length).toFixed(1)
-                : '0.0'}
-            </p>
+            <p className="text-[10px] text-[#8E8E9A] mb-0.5">本月订阅</p>
+            <p className="text-xs font-extrabold text-[#1A1A2E]">¥{monthSubscriptions.toFixed(2)}</p>
           </div>
         </div>
       </div>
@@ -269,8 +335,8 @@ export default function BillsPage({ onRefresh }) {
               {/* Items in this date */}
               <div className="card divide-y divide-gray-100 overflow-hidden">
                 {group.items.map((bill) => {
-                  const icon = CATEGORY_ICONS[bill.category] || '📦';
-                  const color = CATEGORY_COLORS[bill.category] || '#95A5A6';
+                  const icon = getCategoryIcon(bill.category);
+                  const color = getCategoryColor(bill.category);
                   const timeDisplay = bill.time.includes(' ')
                     ? bill.time.split(' ')[1]
                     : bill.time;
@@ -343,46 +409,16 @@ export default function BillsPage({ onRefresh }) {
         <div className="overlay" onClick={() => setShowBudgetModal(false)}>
           <div className="modal-sheet" onClick={(e) => e.stopPropagation()}>
             <div className="modal-handle" />
-            <h3 className="font-bold text-base text-[#1A1A2E] mb-2">设定每日消费预算额度</h3>
+            <h3 className="font-bold text-base text-[#1A1A2E] mb-2">设定今日预算</h3>
             <p className="text-xs text-[#8E8E9A] mb-4">
-              设置合理的每日预算，超支时系统将变红报警，结余充裕时自动显示绿色。
+              先定总额，再给吃饭、购物等分类单独设额度。订阅按月记录，不占当日额度。
             </p>
-            <form onSubmit={handleUpdateBudget} className="space-y-4">
-              <div className="flex items-center gap-2 p-3 bg-[#F8F9FA] rounded-2xl border border-gray-200">
-                <span className="text-2xl font-black text-[#1A1A2E]">¥</span>
-                <input
-                  type="number"
-                  step="1"
-                  min="1"
-                  required
-                  value={budgetInput}
-                  onChange={(e) => setBudgetInput(e.target.value)}
-                  className="w-full text-2xl font-bold bg-transparent outline-none text-price"
-                />
-                <span className="text-xs text-[#8E8E9A]">/天</span>
-              </div>
-
-              {/* Quick suggestions */}
-              <div className="flex items-center gap-2">
-                {[50, 100, 150, 200, 300, 500].map((val) => (
-                  <button
-                    key={val}
-                    type="button"
-                    onClick={() => setBudgetInput(val)}
-                    className="flex-1 py-1.5 rounded-lg bg-gray-100 text-xs font-semibold text-gray-700 hover:bg-gray-200"
-                  >
-                    ¥{val}
-                  </button>
-                ))}
-              </div>
-
-              <button
-                type="submit"
-                className="w-full py-3.5 rounded-2xl bg-[#1A1A2E] text-white font-bold text-sm shadow-md active:scale-95 transition"
-              >
-                保存预算
-              </button>
-            </form>
+            <BudgetEditor
+              dailyBudget={dailyBudget}
+              categoryBudgets={settings.categoryBudgets}
+              categories={settings.categories}
+              onSave={handleUpdateBudget}
+            />
           </div>
         </div>
       )}
