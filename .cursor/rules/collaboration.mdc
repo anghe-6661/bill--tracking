@@ -1,0 +1,14 @@
+---
+description: 多助手协作、CHANGELOG 与自动发布约定
+alwaysApply: true
+---
+
+# 多助手协作
+
+本项目由多个 AI 助手轮流改进。开始前读取 `AGENTS.md` 和 `CHANGELOG.md`，并检查 Git 状态、最近提交与远端更新。保留已有修改，不覆盖、不丢弃，不把无关改动混入本次提交。
+
+完成后：跑相关检查；界面改动要做浏览器验证；更新根目录 `CHANGELOG.md`（改了什么、为什么、验证结果、遗留问题、发布状态）；按 `AGENTS.md` 自动提交并推送到 `origin/main`，再核对 GitHub Pages 部署。检查失败或有冲突时说明实情，不宣称发布成功。
+
+仓库：https://github.com/anghe-6661/bill--tracking
+网站：https://weihangchen.me/bill--tracking/
+以代码和 Git 记录为准，交接文档只作辅助。
