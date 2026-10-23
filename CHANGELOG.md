@@ -10,7 +10,7 @@
 - **为什么：** 各浏览器本地存储互不共享；原同步在首次连接和并发修改时可能覆盖记录；构建后旧图片哈希地址失效。
 - **验证：** `npm run lint`、`npm run build`、同步场景测试和浏览器移动宽度回归；lint 保留项目原有 warnings。
 - **遗留：** 真实 iPhone 与个人 GitHub Token 尚未实机联调。现有数据需在 Safari、主屏幕应用和电脑分别连接同一 Token；建议先分别导出备份。
-- **发布：** 待本次提交推送并检查 GitHub Pages。
+- **发布：** 功能提交 `4bb849a` 已推送到 `origin/main`；[GitHub Pages 运行 39923153906](https://github.com/anghe-6661/bill--tracking/actions/runs/39923153906) 成功。线上首页、脚本、清单、图标与物品图片均返回 HTTP 200。
 
 ## 2026-10-22
 
