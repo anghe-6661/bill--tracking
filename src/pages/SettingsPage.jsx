@@ -30,8 +30,8 @@ import {
 import BudgetEditor from '../components/BudgetEditor';
 import {
   getSyncConfig,
-  saveSyncConfig,
   clearSyncConfig,
+  connectSync,
   pushToCloud,
   pullFromCloud,
 } from '../sync';
@@ -92,18 +92,11 @@ export default function SettingsPage({ onRefresh }) {
       return;
     }
 
-    saveSyncConfig({ token: cleanToken });
-    setSyncConfig(getSyncConfig());
     setIsSyncing(true);
     try {
-      const res = await pullFromCloud();
-      if (res.updated) {
-        showToast('已连接多端同步，并拉取了云端最新记录。');
-        onRefresh();
-      } else {
-        await pushToCloud();
-        showToast('已连接多端同步，本地数据已备份到云端。');
-      }
+      await connectSync(cleanToken);
+      showToast('已连接，已合并本机与云端物品和账单。');
+      onRefresh();
       closeSyncForm();
     } catch (err) {
       showToast('同步提示: ' + (err.message || '网络异常'));
@@ -127,8 +120,9 @@ export default function SettingsPage({ onRefresh }) {
     if (!syncConfig.token) return;
     setIsSyncing(true);
     try {
-      await pushToCloud();
-      showToast('已将本地最新数据推送到云端。');
+      const res = await pushToCloud();
+      showToast(res.updated ? '已合并本机与云端记录。' : res.pushed ? '已上传本地记录。' : '已是最新。');
+      if (res.updated) onRefresh();
       setSyncConfig(getSyncConfig());
     } catch (err) {
       alert('上传失败: ' + err.message);
@@ -146,7 +140,7 @@ export default function SettingsPage({ onRefresh }) {
         showToast('已从云端拉取并更新最新数据。');
         onRefresh();
       } else {
-        showToast('本地数据已是最新。');
+        showToast(res.pushed ? '已上传本地记录。' : '已是最新。');
       }
       setSyncConfig(getSyncConfig());
     } catch (err) {
@@ -343,6 +337,51 @@ export default function SettingsPage({ onRefresh }) {
         </div>
       </div>
 
+      <div className="card p-4 mb-4 border border-gray-100">
+        <div className="flex items-center justify-between mb-1.5">
+          <div className="flex items-center gap-2">
+            <Cloud size={18} className="text-[#007AFF]" />
+            <h2 className="text-sm font-bold text-[#1A1A2E]">多端同步</h2>
+          </div>
+          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isSyncActive ? 'text-green-700 bg-green-50' : 'text-gray-500 bg-gray-100'}`}>
+            {isSyncActive ? '已配置' : '未配置'}
+          </span>
+        </div>
+        <p className="text-[11px] text-[#8E8E9A] leading-relaxed mb-3">
+          Safari、添加到主屏幕的 Bill、电脑浏览器各自保存数据。要自动同步，请在每一处用同一 GitHub 同步令牌连接；已有物品和账单会合并。连接前建议先在各端导出备份。
+        </p>
+        {syncConfig.lastError && <p className="text-[11px] text-red-600 mb-2">上次同步失败：{syncConfig.lastError}</p>}
+        {isSyncActive && !showSyncForm ? (
+          <div className="space-y-3">
+            <p className="text-[11px] text-[#8E8E9A]">{lastSyncLabel}</p>
+            <div className="flex gap-2">
+              <button type="button" onClick={handleManualPull} disabled={isSyncing} className="flex-1 px-2.5 py-2 rounded-xl bg-[#F5F6F8] text-[11px] font-semibold flex items-center justify-center gap-1 disabled:opacity-50"><CloudDownload size={12} />检查云端</button>
+              <button type="button" onClick={handleManualPush} disabled={isSyncing} className="flex-1 px-2.5 py-2 rounded-xl bg-[#F5F6F8] text-[11px] font-semibold flex items-center justify-center gap-1 disabled:opacity-50"><CloudUpload size={12} />立即同步</button>
+            </div>
+            <div className="flex justify-between">
+              <button type="button" onClick={() => setShowSyncForm(true)} className="text-[11px] font-semibold text-[#007AFF]">更换 Token</button>
+              <button type="button" onClick={handleDisconnectSync} className="text-[11px] font-semibold text-red-500">断开</button>
+            </div>
+          </div>
+        ) : !showSyncForm ? (
+          <button type="button" onClick={() => setShowSyncForm(true)} className="w-full py-2.5 rounded-xl bg-[#1A1A2E] text-white text-xs font-bold">连接同步</button>
+        ) : (
+          <form onSubmit={handleSaveSync} className="space-y-3">
+            <p className="text-[11px] text-[#8E8E9A]">令牌保存在本机浏览器；GitHub Gist 备份不加密，请妥善保管令牌与备份链接。</p>
+            <button type="button" onClick={() => setShowTokenHelp(!showTokenHelp)} className="text-[11px] text-[#007AFF]">{showTokenHelp ? '收起教程' : '如何获取 GitHub Token'}</button>
+            {showTokenHelp && <p className="text-[11px] text-[#4A4A52]">打开 <a href="https://github.com/settings/tokens" target="_blank" rel="noreferrer" className="underline">GitHub Token 设置</a>，生成 classic Token，只勾选 gist 权限。</p>}
+            <div className="flex gap-2">
+              <input type={showSyncToken ? 'text' : 'password'} value={syncToken} onChange={(e) => setSyncToken(e.target.value)} placeholder="输入新的同步令牌" autoComplete="off" className="min-w-0 flex-1 px-3 py-2 border border-gray-200 rounded-xl text-xs" />
+              <button type="button" onClick={() => setShowSyncToken(!showSyncToken)} aria-label={showSyncToken ? '隐藏令牌' : '显示令牌'}>{showSyncToken ? <EyeOff size={16} /> : <Eye size={16} />}</button>
+            </div>
+            <div className="flex gap-2">
+              <button type="submit" disabled={isSyncing} className="flex-1 py-2.5 rounded-xl bg-[#007AFF] text-white text-xs font-bold disabled:opacity-50">{isSyncing ? '正在连接…' : '连接并合并'}</button>
+              <button type="button" onClick={closeSyncForm} className="px-3 py-2.5 rounded-xl bg-[#F5F6F8] text-xs">取消</button>
+            </div>
+          </form>
+        )}
+      </div>
+
       <button
         type="button"
         onClick={() => setShowAdvanced((open) => !open)}
@@ -352,8 +391,6 @@ export default function SettingsPage({ onRefresh }) {
         <div>
           <h2 className="text-sm font-bold text-[#1A1A2E]">高级设置</h2>
           <p className="text-[11px] text-[#8E8E9A] mt-0.5">
-            {isSyncActive ? '同步已连接' : '同步未配置'}
-            {' · '}
             {hasDeepSeekKey ? 'AI 已开启' : 'AI 未开启'}
           </p>
         </div>
@@ -365,144 +402,6 @@ export default function SettingsPage({ onRefresh }) {
 
       {showAdvanced && (
         <>
-          <div className="card p-4 mb-4 border border-gray-100">
-            <div className="flex items-center justify-between mb-1.5">
-              <div className="flex items-center gap-2">
-                <Cloud size={18} className="text-[#007AFF]" />
-                <h2 className="text-sm font-bold text-[#1A1A2E]">多端同步</h2>
-              </div>
-              <span
-                className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                  isSyncActive
-                    ? 'text-[#34C759] bg-emerald-50 border border-emerald-200'
-                    : 'text-gray-500 bg-gray-100 border border-gray-200'
-                }`}
-              >
-                {isSyncActive ? (
-                  <>
-                    <span className="w-1.5 h-1.5 rounded-full bg-[#34C759]" />
-                    已连接
-                  </>
-                ) : (
-                  '未配置'
-                )}
-              </span>
-            </div>
-
-            {isSyncActive && !showSyncForm ? (
-              <div className="space-y-3">
-                <p className="text-[11px] text-[#8E8E9A]">{lastSyncLabel}</p>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={handleManualPull}
-                    disabled={isSyncing}
-                    className="flex-1 px-2.5 py-2 rounded-xl bg-[#F5F6F8] text-[11px] font-semibold text-[#1A1A2E] hover:bg-gray-200 flex items-center justify-center gap-1 active:scale-95 transition disabled:opacity-50"
-                  >
-                    <CloudDownload size={12} className="text-blue-600" />
-                    <span>拉取云端</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleManualPush}
-                    disabled={isSyncing}
-                    className="flex-1 px-2.5 py-2 rounded-xl bg-[#F5F6F8] text-[11px] font-semibold text-[#1A1A2E] hover:bg-gray-200 flex items-center justify-center gap-1 active:scale-95 transition disabled:opacity-50"
-                  >
-                    <CloudUpload size={12} className="text-emerald-600" />
-                    <span>推送到云</span>
-                  </button>
-                </div>
-                <div className="flex items-center justify-between pt-1">
-                  <button
-                    type="button"
-                    onClick={() => setShowSyncForm(true)}
-                    className="text-[11px] font-semibold text-[#007AFF]"
-                  >
-                    更换 Token
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleDisconnectSync}
-                    className="text-[11px] font-semibold text-red-500"
-                  >
-                    断开
-                  </button>
-                </div>
-              </div>
-            ) : !isSyncActive && !showSyncForm ? (
-              <div>
-                <p className="text-[11px] text-[#8E8E9A] leading-relaxed mb-3">
-                  手机和电脑使用同一份同步令牌，即可自动备份账单和物品。
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setShowSyncForm(true)}
-                  className="w-full py-2.5 rounded-xl bg-[#1A1A2E] text-white text-xs font-bold active:scale-95 transition"
-                >
-                  去配置
-                </button>
-              </div>
-            ) : (
-              <form onSubmit={handleSaveSync} className="space-y-3">
-                <p className="text-[11px] text-[#8E8E9A] leading-relaxed">
-                  令牌只用于连接你自己的 GitHub 私有备份，页面不会回显已保存的内容。
-                </p>
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="text-[11px] font-semibold text-[#4A4A52]">同步令牌</label>
-                    <button
-                      type="button"
-                      onClick={() => setShowTokenHelp(!showTokenHelp)}
-                      className="text-[10px] font-semibold text-[#007AFF]"
-                    >
-                      {showTokenHelp ? '收起教程' : '如何获取'}
-                    </button>
-                  </div>
-                  {showTokenHelp && (
-                    <div className="mb-2 p-2.5 rounded-xl bg-blue-50/80 border border-blue-200/60 text-[11px] text-blue-900 space-y-1 leading-normal">
-                      <p>1. 打开 <a href="https://github.com/settings/tokens" target="_blank" rel="noreferrer" className="underline font-semibold text-blue-700">github.com/settings/tokens</a></p>
-                      <p>2. 选择 Generate new token (classic)</p>
-                      <p>3. 只勾选 gist 权限，生成后粘贴到下方</p>
-                    </div>
-                  )}
-                  <div className="relative flex items-center">
-                    <input
-                      type={showSyncToken ? 'text' : 'password'}
-                      placeholder="输入新的令牌"
-                      value={syncToken}
-                      autoComplete="off"
-                      onChange={(e) => setSyncToken(e.target.value)}
-                      className="w-full px-3 py-2 pr-10 bg-white border border-gray-200 rounded-xl text-xs outline-none focus:border-[#007AFF] transition"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowSyncToken(!showSyncToken)}
-                      className="absolute right-3 text-[#8E8E9A] hover:text-[#1A1A2E] transition"
-                    >
-                      {showSyncToken ? <EyeOff size={15} /> : <Eye size={15} />}
-                    </button>
-                  </div>
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    type="submit"
-                    disabled={isSyncing}
-                    className="flex-1 py-2.5 rounded-xl bg-[#007AFF] text-white text-xs font-bold active:scale-95 transition disabled:opacity-50"
-                  >
-                    {isSyncing ? '正在连接…' : isSyncActive ? '保存并同步' : '开启同步'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={closeSyncForm}
-                    className="px-3 py-2.5 rounded-xl bg-[#F5F6F8] text-xs font-semibold text-[#4A4A52]"
-                  >
-                    取消
-                  </button>
-                </div>
-              </form>
-            )}
-          </div>
-
           <div className="card p-4 mb-4 border border-gray-100">
             <div className="flex items-center justify-between mb-1.5">
               <div className="flex items-center gap-2">

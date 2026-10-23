@@ -1,211 +1,203 @@
-// ── Bill Cloud Sync Manager (GitHub Gist Powered) ──
-// Uses GitHub Personal Access Token (with gist scope) for 100% private, reliable, cross-device sync.
-
-const SYNC_CONFIG_KEY = 'bill_gist_sync_config';
-const GIST_FILENAME = 'bill-app-data.json';
+// Each browser, including an installed iOS home-screen app, owns separate storage.
+const KEY = 'bill_gist_sync_config';
+const FILE = 'bill-app-data.json';
+const API = 'https://api.github.com/gists';
+const defaults = () => ({ token: '', gistId: '', autoSync: true, lastSyncTime: null, lastSyncedDataAt: 0, lastError: '' });
 
 export function getSyncConfig() {
-  try {
-    const raw = localStorage.getItem(SYNC_CONFIG_KEY);
-    if (raw) return JSON.parse(raw);
-  } catch (_) {}
-  return {
-    token: '',
-    gistId: '',
-    autoSync: true,
-    lastSyncTime: null,
-  };
+  try { return { ...defaults(), ...JSON.parse(localStorage.getItem(KEY) || '{}') }; }
+  catch { return defaults(); }
 }
-
 export function saveSyncConfig(updates) {
-  const current = getSyncConfig();
-  const next = { ...current, ...updates };
-  localStorage.setItem(SYNC_CONFIG_KEY, JSON.stringify(next));
+  const next = { ...getSyncConfig(), ...updates };
+  localStorage.setItem(KEY, JSON.stringify(next));
   return next;
 }
-
 export function clearSyncConfig() {
-  localStorage.removeItem(SYNC_CONFIG_KEY);
-  return {
-    token: '',
-    gistId: '',
-    autoSync: true,
-    lastSyncTime: null,
-  };
+  localStorage.removeItem(KEY);
+  return defaults();
 }
 
-function getLocalPayload() {
-  const rawItems = localStorage.getItem('bill_items') || '[]';
-  const rawBills = localStorage.getItem('bill_bills') || '[]';
-  const rawSettings = localStorage.getItem('bill_settings') || '{}';
-  const lastUpdated = parseInt(localStorage.getItem('bill_last_updated') || '0', 10) || Date.now();
+const headers = (token) => ({
+  Authorization: `Bearer ${token.trim()}`,
+  Accept: 'application/vnd.github+json',
+  'Content-Type': 'application/json',
+});
+async function jsonOrThrow(res, label) {
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.message || `${label} (${res.status})`);
+  return body;
+}
+function readLocal() {
+  const read = (key, fallback) => {
+    try { return JSON.parse(localStorage.getItem(key) || fallback); }
+    catch { return JSON.parse(fallback); }
+  };
   return {
-    items: JSON.parse(rawItems),
-    bills: JSON.parse(rawBills),
-    settings: JSON.parse(rawSettings),
-    updatedAt: Math.max(lastUpdated, Date.now()),
-    version: '1.0',
+    items: read('bill_items', '[]'),
+    bills: read('bill_bills', '[]'),
+    settings: read('bill_settings', '{}'),
+    deletedItemIds: read('bill_deleted_item_ids', '[]'),
+    deletedBillIds: read('bill_deleted_bill_ids', '[]'),
+    updatedAt: Number(localStorage.getItem('bill_last_updated')) || 0,
+    version: '1.1',
   };
 }
+function writeLocal(data) {
+  // Avoid store.save*: that would schedule another upload.
+  localStorage.setItem('bill_items', JSON.stringify(data.items));
+  localStorage.setItem('bill_bills', JSON.stringify(data.bills));
+  localStorage.setItem('bill_settings', JSON.stringify(data.settings));
+  localStorage.setItem('bill_deleted_item_ids', JSON.stringify(data.deletedItemIds || []));
+  localStorage.setItem('bill_deleted_bill_ids', JSON.stringify(data.deletedBillIds || []));
+  localStorage.setItem('bill_last_updated', String(data.updatedAt));
+  window.dispatchEvent(new CustomEvent('bill-data-synced'));
+}
+function mergeRecords(cloud, local) {
+  const records = new Map();
+  for (const record of [...cloud, ...local]) {
+    if (record?.id != null) records.set(String(record.id), record);
+  }
+  return [...records.values()];
+}
+function mergeData(cloud, local) {
+  const deletedItemIds = [...new Set([...(cloud.deletedItemIds || []), ...(local.deletedItemIds || [])].map(String))];
+  const deletedBillIds = [...new Set([...(cloud.deletedBillIds || []), ...(local.deletedBillIds || [])].map(String))];
+  return {
+    items: mergeRecords(cloud.items, local.items).filter((item) => !deletedItemIds.includes(String(item.id))),
+    bills: mergeRecords(cloud.bills, local.bills).filter((bill) => !deletedBillIds.includes(String(bill.id))),
+    deletedItemIds,
+    deletedBillIds,
+    settings: local.updatedAt > cloud.updatedAt ? local.settings : cloud.settings,
+    updatedAt: Math.max(Date.now(), cloud.updatedAt + 1, local.updatedAt + 1),
+    version: '1.1',
+  };
+}
+async function findGist(token) {
+  const list = await jsonOrThrow(
+    await fetch(`${API}?per_page=100`, { headers: headers(token) }), 'GitHub Token 验证失败'
+  );
+  return list.find((gist) => gist.files?.[FILE]);
+}
+async function readGist(token, id) {
+  const gist = await jsonOrThrow(
+    await fetch(`${API}/${id}?_t=${Date.now()}`, { headers: headers(token), cache: 'no-store' }), 'Gist 获取失败'
+  );
+  const file = gist.files?.[FILE];
+  if (!file) throw new Error('云端备份缺失，未覆盖本地数据');
+  let content = file.content;
+  if (file.truncated && file.raw_url) {
+    const rawUrl = new URL(file.raw_url);
+    if (rawUrl.protocol !== 'https:' || rawUrl.hostname !== 'gist.githubusercontent.com') {
+      throw new Error('云端备份地址异常，未覆盖本地数据');
+    }
+    const raw = await fetch(rawUrl, {
+      headers: { Authorization: `Bearer ${token.trim()}` },
+      cache: 'no-store',
+    });
+    if (!raw.ok) throw new Error(`完整云端备份读取失败 (${raw.status})`);
+    content = await raw.text();
+  }
+  if (!content) throw new Error('云端备份为空，未覆盖本地数据');
+  try {
+    const data = JSON.parse(content);
+    if (!Array.isArray(data.items) || !Array.isArray(data.bills) ||
+        !data.settings || typeof data.settings !== 'object' || Array.isArray(data.settings)) throw new Error();
+    return { ...data, updatedAt: Number(data.updatedAt) || 0 };
+  } catch {
+    throw new Error('云端备份格式错误，未覆盖本地数据');
+  }
+}
+async function writeGist(token, id, data) {
+  await jsonOrThrow(await fetch(`${API}/${id}`, {
+    method: 'PATCH', headers: headers(token),
+    body: JSON.stringify({ files: { [FILE]: { content: JSON.stringify(data) } } }),
+  }), 'Gist 推送失败');
+}
+async function createGist(token, data) {
+  const gist = await jsonOrThrow(await fetch(API, {
+    method: 'POST', headers: headers(token),
+    body: JSON.stringify({
+      description: 'Bill App 个人记账与物品数据同步', public: false,
+      files: { [FILE]: { content: JSON.stringify(data) } },
+    }),
+  }), '创建云端 Gist 失败');
+  return gist.id;
+}
 
-// Find existing Gist containing bill-app-data.json or create a new one
-export async function getOrCreateGistId(token) {
+// First connection preserves unique records from both sides. It must finish
+// before storing the token, so a failed connection cannot start auto-upload.
+export async function connectSync(token) {
   const cleanToken = token.trim();
-  const config = getSyncConfig();
-
-  if (config.gistId) {
-    return config.gistId;
-  }
-
-  // Query user's recent gists to check if one was created on another device
-  const listRes = await fetch('https://api.github.com/gists?per_page=30', {
-    headers: {
-      Authorization: `Bearer ${cleanToken}`,
-      Accept: 'application/vnd.github+json',
-    },
-  });
-
-  if (!listRes.ok) {
-    const err = await listRes.json().catch(() => ({}));
-    throw new Error(err.message || `GitHub Token 验证失败 (${listRes.status})`);
-  }
-
-  const gists = await listRes.json();
-  const existing = gists.find((g) => g.files && g.files[GIST_FILENAME]);
+  if (!cleanToken) throw new Error('请输入同步令牌');
+  const existing = await findGist(cleanToken);
+  const local = readLocal();
+  let gistId;
+  let result;
   if (existing) {
-    saveSyncConfig({ gistId: existing.id });
-    return existing.id;
+    gistId = existing.id;
+    result = mergeData(await readGist(cleanToken, gistId), local);
+    await writeGist(cleanToken, gistId, result);
+  } else {
+    result = { ...local, updatedAt: Math.max(Date.now(), local.updatedAt + 1) };
+    gistId = await createGist(cleanToken, result);
   }
-
-  // Not found -> create new secret Gist
-  const localPayload = getLocalPayload();
-  const createRes = await fetch('https://api.github.com/gists', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${cleanToken}`,
-      Accept: 'application/vnd.github+json',
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      description: 'Bill App 个人记账与物品数据同步 (Private)',
-      public: false,
-      files: {
-        [GIST_FILENAME]: {
-          content: JSON.stringify(localPayload, null, 2),
-        },
-      },
-    }),
-  });
-
-  if (!createRes.ok) {
-    const err = await createRes.json().catch(() => ({}));
-    throw new Error(err.message || `创建云端 Gist 失败 (${createRes.status})`);
-  }
-
-  const newGist = await createRes.json();
-  saveSyncConfig({ gistId: newGist.id });
-  return newGist.id;
+  writeLocal(result);
+  saveSyncConfig({ token: cleanToken, gistId, lastSyncTime: Date.now(), lastSyncedDataAt: result.updatedAt, lastError: '' });
+  return { updated: true, created: !existing };
 }
-
-// Push local data to GitHub Gist
-export async function pushToCloud() {
+export async function getOrCreateGistId(token) {
   const config = getSyncConfig();
-  if (!config.token) return { success: false, reason: '未配置 GitHub Token' };
-
-  const gistId = await getOrCreateGistId(config.token);
-  const payload = getLocalPayload();
-
-  const res = await fetch(`https://api.github.com/gists/${gistId}`, {
-    method: 'PATCH',
-    headers: {
-      Authorization: `Bearer ${config.token.trim()}`,
-      Accept: 'application/vnd.github+json',
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      description: 'Bill App 个人记账与物品数据同步 (Private)',
-      files: {
-        [GIST_FILENAME]: {
-          content: JSON.stringify(payload, null, 2),
-        },
-      },
-    }),
-  });
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.message || `Gist 推送失败 (${res.status})`);
-  }
-
-  saveSyncConfig({ lastSyncTime: Date.now() });
-  return { success: true, timestamp: Date.now() };
+  if (config.gistId) return config.gistId;
+  await connectSync(token);
+  return getSyncConfig().gistId;
 }
 
-// Pull from GitHub Gist and merge if newer
-export async function pullFromCloud() {
+let inFlight = null;
+async function syncNow() {
   const config = getSyncConfig();
   if (!config.token) return { updated: false, reason: '未配置 GitHub Token' };
-
-  const gistId = await getOrCreateGistId(config.token);
-
-  const res = await fetch(`https://api.github.com/gists/${gistId}?_t=${Date.now()}`, {
-    headers: {
-      Authorization: `Bearer ${config.token.trim()}`,
-      Accept: 'application/vnd.github+json',
-    },
-  });
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.message || `Gist 获取失败 (${res.status})`);
-  }
-
-  const gist = await res.json();
-  const file = gist.files && gist.files[GIST_FILENAME];
-  if (!file || !file.content) {
-    return { updated: false };
-  }
-
-  let cloudData;
   try {
-    cloudData = JSON.parse(file.content);
-  } catch (_) {
-    return { updated: false };
+    const id = config.gistId || await getOrCreateGistId(config.token);
+    const cloud = await readGist(config.token, id);
+    const local = readLocal();
+    let result = cloud;
+    let updated = false;
+    let pushed = false;
+    if (local.updatedAt > config.lastSyncedDataAt && cloud.updatedAt > config.lastSyncedDataAt) {
+      result = mergeData(cloud, local);
+      await writeGist(config.token, id, result);
+      writeLocal(result);
+      updated = pushed = true;
+    } else if (cloud.updatedAt > local.updatedAt) {
+      writeLocal(cloud);
+      updated = true;
+    } else if (local.updatedAt > cloud.updatedAt) {
+      await writeGist(config.token, id, local);
+      result = local;
+      pushed = true;
+    }
+    saveSyncConfig({ lastSyncTime: Date.now(), lastSyncedDataAt: result.updatedAt, lastError: '' });
+    return { updated, pushed };
+  } catch (error) {
+    saveSyncConfig({ lastError: error.message || '网络异常' });
+    throw error;
   }
-
-  const localUpdated = parseInt(localStorage.getItem('bill_last_updated') || '0', 10);
-
-  if (cloudData.updatedAt > localUpdated) {
-    if (Array.isArray(cloudData.items)) {
-      localStorage.setItem('bill_items', JSON.stringify(cloudData.items));
-    }
-    if (Array.isArray(cloudData.bills)) {
-      localStorage.setItem('bill_bills', JSON.stringify(cloudData.bills));
-    }
-    if (cloudData.settings && typeof cloudData.settings === 'object') {
-      localStorage.setItem('bill_settings', JSON.stringify(cloudData.settings));
-    }
-    localStorage.setItem('bill_last_updated', String(cloudData.updatedAt));
-    saveSyncConfig({ lastSyncTime: Date.now() });
-
-    window.dispatchEvent(new CustomEvent('bill-data-synced', { detail: cloudData }));
-    return { updated: true, cloudData };
-  } else if (localUpdated > cloudData.updatedAt) {
-    await pushToCloud();
-    return { updated: false, pushed: true };
-  }
-
-  saveSyncConfig({ lastSyncTime: Date.now() });
-  return { updated: false };
 }
+function runSync() {
+  if (inFlight) return inFlight;
+  inFlight = syncNow().finally(() => { inFlight = null; });
+  return inFlight;
+}
+export function pushToCloud() { return runSync(); }
+export function pullFromCloud() { return runSync(); }
 
-// Debounced auto-push helper
 let pushTimeout = null;
 export function triggerDebouncedPush(delayMs = 1500) {
   const config = getSyncConfig();
   if (!config.token || !config.autoSync) return;
-  if (pushTimeout) clearTimeout(pushTimeout);
+  clearTimeout(pushTimeout);
   pushTimeout = setTimeout(() => {
-    pushToCloud().catch((err) => console.warn('Auto Gist push failed:', err));
+    runSync().catch((error) => console.warn('Auto Gist sync failed:', error));
   }, delayMs);
 }

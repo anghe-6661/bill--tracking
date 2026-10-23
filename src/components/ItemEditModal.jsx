@@ -33,7 +33,24 @@ export default function ItemEditModal({ item, onClose, onRefresh }) {
 
     const reader = new FileReader();
     reader.onload = () => {
-      setImage(reader.result);
+      const source = new Image();
+      source.onload = () => {
+        const scale = Math.min(1, 640 / Math.max(source.width, source.height));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(source.width * scale));
+        canvas.height = Math.max(1, Math.round(source.height * scale));
+        const context = canvas.getContext('2d');
+        if (!context) {
+          alert('图片处理失败，请换一张图片重试。');
+          return;
+        }
+        context.fillStyle = '#fff';
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        context.drawImage(source, 0, 0, canvas.width, canvas.height);
+        setImage(canvas.toDataURL('image/jpeg', 0.76));
+      };
+      source.onerror = () => alert('图片无法读取，请选择 JPEG 或 PNG 图片。');
+      source.src = reader.result;
     };
     reader.readAsDataURL(file);
   };
@@ -60,10 +77,15 @@ export default function ItemEditModal({ item, onClose, onRefresh }) {
       soldPrice: item?.soldPrice || 0,
     };
 
-    if (isEdit) {
-      updateItem(item.id, payload);
-    } else {
-      addItem(payload);
+    try {
+      if (isEdit) {
+        updateItem(item.id, payload);
+      } else {
+        addItem(payload);
+      }
+    } catch {
+      alert('本机存储空间不足，物品未保存。请缩小图片或先导出备份。');
+      return;
     }
 
     onRefresh();

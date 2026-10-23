@@ -1,16 +1,9 @@
-// High-resolution realistic photography matching the user's reference screenshot
-import freebudsImg from './images/freebuds.jpg';
-import pcImg from './images/pc.jpg';
-import foldImg from './images/fold.jpg';
-import watchImg from './images/watch.jpg';
-import carImg from './images/car.jpg';
-import iphoneImg from './images/iphone.jpg';
-
+// Keep these URLs stable across builds: saved items can outlive a Vite asset hash.
 export const DEMO_ITEM_IMAGES = {
-  freebuds: freebudsImg,
-  pc: pcImg,
-  fold: foldImg,
-  watch: watchImg,
-  car: carImg,
-  iphone: iphoneImg,
+  freebuds: `${import.meta.env.BASE_URL}item-images/freebuds.jpg`,
+  pc: `${import.meta.env.BASE_URL}item-images/pc.jpg`,
+  fold: `${import.meta.env.BASE_URL}item-images/fold.jpg`,
+  watch: `${import.meta.env.BASE_URL}item-images/watch.jpg`,
+  car: `${import.meta.env.BASE_URL}item-images/car.jpg`,
+  iphone: `${import.meta.env.BASE_URL}item-images/iphone.jpg`,
 };

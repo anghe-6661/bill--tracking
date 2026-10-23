@@ -206,6 +206,7 @@ function saveData(key, data) {
     triggerDebouncedPush();
   } catch (e) {
     console.warn(`Failed to save ${key}:`, e);
+    throw e;
   }
 }
 
@@ -213,8 +214,11 @@ function saveData(key, data) {
 export function getItems() {
   const items = loadData(STORAGE_KEYS.ITEMS, DEMO_ITEMS);
   return items.map((item) => {
-    // Smart image fallback based on name or id
-    if (!item.image || (typeof item.image === 'string' && item.image.startsWith('data:image/svg'))) {
+    // Previous builds saved hashed Vite asset URLs in localStorage/Gist. Those
+    // files disappear on deployment, so resolve only known demo assets again.
+    const oldDemoImage = typeof item.image === 'string' &&
+      /(?:^|\/)assets\/(?:freebuds|pc|fold|watch|car|iphone)-[^/]+\.jpg(?:\?.*)?$/.test(item.image);
+    if (!item.image || oldDemoImage || (typeof item.image === 'string' && item.image.startsWith('data:image/svg'))) {
       const name = item.name.toLowerCase();
       if (name.includes('freebuds') || item.id === '1') item.image = DEMO_ITEM_IMAGES.freebuds;
       else if (name.includes('5080') || name.includes('夜神') || item.id === '2') item.image = DEMO_ITEM_IMAGES.pc;
@@ -249,6 +253,9 @@ export function updateItem(id, updates) {
 }
 
 export function deleteItem(id) {
+  const deleted = new Set(JSON.parse(localStorage.getItem('bill_deleted_item_ids') || '[]'));
+  deleted.add(String(id));
+  localStorage.setItem('bill_deleted_item_ids', JSON.stringify([...deleted]));
   const items = getItems().filter((i) => i.id !== id);
   saveItems(items);
   return items;
@@ -270,6 +277,9 @@ export function addBill(bill) {
 }
 
 export function deleteBill(id) {
+  const deleted = new Set(JSON.parse(localStorage.getItem('bill_deleted_bill_ids') || '[]'));
+  deleted.add(String(id));
+  localStorage.setItem('bill_deleted_bill_ids', JSON.stringify([...deleted]));
   const bills = getBills().filter((b) => b.id !== id);
   saveBills(bills);
   return bills;
@@ -379,6 +389,13 @@ export function exportAllData() {
 
 export function importAllData(jsonStr) {
   const data = JSON.parse(jsonStr);
+  if (data.items && !Array.isArray(data.items)) throw new Error('Invalid items');
+  if (data.bills && !Array.isArray(data.bills)) throw new Error('Invalid bills');
+  if (data.settings && (typeof data.settings !== 'object' || Array.isArray(data.settings))) {
+    throw new Error('Invalid settings');
+  }
+  localStorage.removeItem('bill_deleted_item_ids');
+  localStorage.removeItem('bill_deleted_bill_ids');
   if (data.items) saveItems(data.items);
   if (data.bills) saveBills(data.bills);
   if (data.settings) saveSettings(data.settings);
@@ -386,12 +403,16 @@ export function importAllData(jsonStr) {
 }
 
 export function resetToDemoData() {
+  localStorage.removeItem('bill_deleted_item_ids');
+  localStorage.removeItem('bill_deleted_bill_ids');
   saveItems(DEMO_ITEMS);
   saveBills(DEMO_BILLS);
   saveSettings(DEFAULT_SETTINGS);
 }
 
 export function clearAllData() {
+  localStorage.setItem('bill_deleted_item_ids', JSON.stringify(getItems().map((item) => String(item.id))));
+  localStorage.setItem('bill_deleted_bill_ids', JSON.stringify(getBills().map((bill) => String(bill.id))));
   saveItems([]);
   saveBills([]);
   saveSettings(DEFAULT_SETTINGS);
