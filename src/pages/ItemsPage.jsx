@@ -88,7 +88,11 @@ export default function ItemsPage({ onRefresh }) {
       <div className="pt-6 pb-3 flex justify-between items-center">
         <h1 className="text-[26px] font-bold text-gray-900 leading-none">Bill</h1>
         <button
-          onClick={() => setShowSearch(!showSearch)}
+          onClick={() => {
+            // 收起时清空搜索词，避免列表被不可见的过滤条件卡住
+            if (showSearch) setSearchQuery('');
+            setShowSearch(!showSearch);
+          }}
           className="w-10 h-10 rounded-full border border-black/15 bg-transparent flex items-center justify-center active:scale-95 transition"
           title="搜索"
         >
