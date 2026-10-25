@@ -72,7 +72,7 @@ export default function BudgetEditor({
       <div>
         <label className="text-xs font-bold text-[#4A4A52] block mb-1.5">今日总预算</label>
         <div className="flex items-center gap-2 p-3 bg-[#F8F9FA] rounded-2xl border border-gray-200">
-          <span className="text-2xl font-black text-[#1A1A2E]">¥</span>
+          <span className="text-2xl font-black text-[#1A1A2E] flex-shrink-0">¥</span>
           <input
             type="number"
             step="1"
@@ -80,9 +80,9 @@ export default function BudgetEditor({
             required
             value={total}
             onChange={(e) => setTotal(e.target.value)}
-            className="w-full text-2xl font-bold bg-transparent outline-none text-price"
+            className="w-full flex-1 min-w-0 text-2xl font-bold bg-transparent outline-none text-price"
           />
-          <span className="text-xs text-[#8E8E9A]">/天</span>
+          <span className="text-xs text-[#8E8E9A] whitespace-nowrap flex-shrink-0">/天</span>
         </div>
         <div className="flex items-center gap-2 mt-2">
           {[50, 100, 150, 200, 300, 500].map((val) => (
