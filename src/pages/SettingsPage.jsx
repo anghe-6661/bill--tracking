@@ -6,7 +6,6 @@ import {
   Trash2,
   Sliders,
   Smartphone,
-  ShieldCheck,
   CheckCircle2,
   Share,
   Eye,
@@ -15,8 +14,7 @@ import {
   RefreshCw,
   Cpu,
   Cloud,
-  CloudUpload,
-  CloudDownload,
+  KeyRound,
   ChevronDown,
 } from 'lucide-react';
 import {
@@ -33,7 +31,6 @@ import {
   clearSyncConfig,
   connectSync,
   pushToCloud,
-  pullFromCloud,
 } from '../sync';
 
 export default function SettingsPage({ onRefresh }) {
@@ -116,7 +113,7 @@ export default function SettingsPage({ onRefresh }) {
     showToast('已断开多端同步。');
   };
 
-  const handleManualPush = async () => {
+  const handleManualSync = async () => {
     if (!syncConfig.token) return;
     setIsSyncing(true);
     try {
@@ -125,26 +122,7 @@ export default function SettingsPage({ onRefresh }) {
       if (res.updated) onRefresh();
       setSyncConfig(getSyncConfig());
     } catch (err) {
-      alert('上传失败: ' + err.message);
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
-  const handleManualPull = async () => {
-    if (!syncConfig.token) return;
-    setIsSyncing(true);
-    try {
-      const res = await pullFromCloud();
-      if (res.updated) {
-        showToast('已从云端拉取并更新最新数据。');
-        onRefresh();
-      } else {
-        showToast(res.pushed ? '已上传本地记录。' : '已是最新。');
-      }
-      setSyncConfig(getSyncConfig());
-    } catch (err) {
-      alert('拉取失败: ' + err.message);
+      alert('同步失败: ' + err.message);
     } finally {
       setIsSyncing(false);
     }
@@ -286,85 +264,87 @@ export default function SettingsPage({ onRefresh }) {
       </div>
 
       <div className="card p-4 mb-4 border border-gray-100">
-        <div className="flex items-center gap-2 mb-2">
-          <ShieldCheck size={17} className="text-[#34C759]" />
-          <h2 className="text-sm font-bold text-[#1A1A2E]">数据备份</h2>
-        </div>
-        <p className="text-xs text-[#8E8E9A] mb-3">
-          数据保存在本机浏览器中，可随时导出或导入 JSON 备份。
-        </p>
-
-        <div className="grid grid-cols-2 gap-2 mb-2">
-          <button
-            onClick={handleExport}
-            className="flex items-center justify-center gap-1.5 p-3 rounded-xl bg-[#F5F6F8] hover:bg-gray-200 text-xs font-bold text-[#1A1A2E] active:scale-95 transition"
-          >
-            <Download size={14} />
-            <span>导出备份</span>
-          </button>
-
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            className="flex items-center justify-center gap-1.5 p-3 rounded-xl bg-[#F5F6F8] hover:bg-gray-200 text-xs font-bold text-[#1A1A2E] active:scale-95 transition"
-          >
-            <Upload size={14} />
-            <span>导入恢复</span>
-          </button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".json"
-            className="hidden"
-            onChange={handleImportFile}
-          />
-        </div>
-
-        <div className="grid grid-cols-2 gap-2 pt-2 border-t border-gray-100">
-          <button
-            onClick={handleResetDemo}
-            className="flex items-center justify-center gap-1 p-2 rounded-lg text-[11px] font-semibold text-gray-600 hover:bg-gray-100"
-          >
-            <RotateCcw size={12} />
-            <span>重置演示数据</span>
-          </button>
-          <button
-            onClick={handleClear}
-            className="flex items-center justify-center gap-1 p-2 rounded-lg text-[11px] font-semibold text-red-500 hover:bg-red-50"
-          >
-            <Trash2 size={12} />
-            <span>清空本地数据</span>
-          </button>
-        </div>
-      </div>
-
-      <div className="card p-4 mb-4 border border-gray-100">
         <div className="flex items-center justify-between mb-1.5">
           <div className="flex items-center gap-2">
             <Cloud size={18} className="text-[#007AFF]" />
-            <h2 className="text-sm font-bold text-[#1A1A2E]">多端同步</h2>
+            <h2 className="text-sm font-bold text-[#1A1A2E]">备份与同步</h2>
           </div>
           <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isSyncActive ? 'text-green-700 bg-green-50' : 'text-gray-500 bg-gray-100'}`}>
             {isSyncActive ? '已配置' : '未配置'}
           </span>
         </div>
         <p className="text-[11px] text-[#8E8E9A] leading-relaxed mb-3">
-          Safari、添加到主屏幕的 Bill、电脑浏览器各自保存数据。要自动同步，请在每一处用同一 GitHub 同步令牌连接；已有物品和账单会合并。连接前建议先在各端导出备份。
+          数据保存在本机浏览器，可随时导出或导入 JSON 备份。要自动多端同步，请在 Safari、主屏幕和电脑用同一 GitHub 同步令牌连接；已有物品和账单会合并。
         </p>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".json"
+          className="hidden"
+          onChange={handleImportFile}
+        />
         {syncConfig.lastError && <p className="text-[11px] text-red-600 mb-2">上次同步失败：{syncConfig.lastError}</p>}
+
         {isSyncActive && !showSyncForm ? (
-          <div className="space-y-3">
-            <p className="text-[11px] text-[#8E8E9A]">{lastSyncLabel}</p>
-            <div className="flex gap-2">
-              <button type="button" onClick={handleManualPull} disabled={isSyncing} className="flex-1 px-2.5 py-2 rounded-xl bg-[#F5F6F8] text-[11px] font-semibold flex items-center justify-center gap-1 disabled:opacity-50"><CloudDownload size={12} />检查云端</button>
-              <button type="button" onClick={handleManualPush} disabled={isSyncing} className="flex-1 px-2.5 py-2 rounded-xl bg-[#F5F6F8] text-[11px] font-semibold flex items-center justify-center gap-1 disabled:opacity-50"><CloudUpload size={12} />立即同步</button>
+          <>
+            <p className="text-[11px] text-[#8E8E9A] mb-2">{lastSyncLabel}</p>
+            <div className="grid grid-cols-2 gap-2 mb-2">
+              <button
+                type="button"
+                onClick={handleManualSync}
+                disabled={isSyncing}
+                className="flex items-center justify-center gap-1.5 p-3 rounded-xl bg-[#F5F6F8] hover:bg-gray-200 text-xs font-bold text-[#1A1A2E] active:scale-95 transition disabled:opacity-50"
+              >
+                <RefreshCw size={14} />
+                <span>立即同步</span>
+              </button>
+              <button
+                onClick={handleExport}
+                className="flex items-center justify-center gap-1.5 p-3 rounded-xl bg-[#F5F6F8] hover:bg-gray-200 text-xs font-bold text-[#1A1A2E] active:scale-95 transition"
+              >
+                <Download size={14} />
+                <span>导出备份</span>
+              </button>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="flex items-center justify-center gap-1.5 p-3 rounded-xl bg-[#F5F6F8] hover:bg-gray-200 text-xs font-bold text-[#1A1A2E] active:scale-95 transition"
+              >
+                <Upload size={14} />
+                <span>导入恢复</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowSyncForm(true)}
+                className="flex items-center justify-center gap-1.5 p-3 rounded-xl bg-[#F5F6F8] hover:bg-gray-200 text-xs font-bold text-[#1A1A2E] active:scale-95 transition"
+              >
+                <KeyRound size={14} />
+                <span>更换 Token</span>
+              </button>
             </div>
-            <div className="flex justify-between">
-              <button type="button" onClick={() => setShowSyncForm(true)} className="text-[11px] font-semibold text-[#007AFF]">更换 Token</button>
-              <button type="button" onClick={handleDisconnectSync} className="text-[11px] font-semibold text-red-500">断开</button>
+            <div className="flex justify-end">
+              <button type="button" onClick={handleDisconnectSync} className="text-[11px] font-semibold text-red-500">断开同步</button>
             </div>
-          </div>
+          </>
         ) : !showSyncForm ? (
-          <button type="button" onClick={() => setShowSyncForm(true)} className="w-full py-2.5 rounded-xl bg-[#1A1A2E] text-white text-xs font-bold">连接同步</button>
+          <>
+            <div className="grid grid-cols-2 gap-2 mb-2">
+              <button
+                onClick={handleExport}
+                className="flex items-center justify-center gap-1.5 p-3 rounded-xl bg-[#F5F6F8] hover:bg-gray-200 text-xs font-bold text-[#1A1A2E] active:scale-95 transition"
+              >
+                <Download size={14} />
+                <span>导出备份</span>
+              </button>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="flex items-center justify-center gap-1.5 p-3 rounded-xl bg-[#F5F6F8] hover:bg-gray-200 text-xs font-bold text-[#1A1A2E] active:scale-95 transition"
+              >
+                <Upload size={14} />
+                <span>导入恢复</span>
+              </button>
+            </div>
+            <button type="button" onClick={() => setShowSyncForm(true)} className="w-full py-2.5 rounded-xl bg-[#1A1A2E] text-white text-xs font-bold">连接同步</button>
+          </>
         ) : (
           <form onSubmit={handleSaveSync} className="space-y-3">
             <p className="text-[11px] text-[#8E8E9A]">令牌保存在本机浏览器；GitHub Gist 备份不加密，请妥善保管令牌与备份链接。</p>
@@ -380,6 +360,23 @@ export default function SettingsPage({ onRefresh }) {
             </div>
           </form>
         )}
+
+        <div className="grid grid-cols-2 gap-2 pt-2 mt-2 border-t border-gray-100">
+          <button
+            onClick={handleResetDemo}
+            className="flex items-center justify-center gap-1 p-2 rounded-lg text-[11px] font-semibold text-gray-600 hover:bg-gray-100"
+          >
+            <RotateCcw size={12} />
+            <span>重置演示数据</span>
+          </button>
+          <button
+            onClick={handleClear}
+            className="flex items-center justify-center gap-1 p-2 rounded-lg text-[11px] font-semibold text-red-500 hover:bg-red-50"
+          >
+            <Trash2 size={12} />
+            <span>清空本地数据</span>
+          </button>
+        </div>
       </div>
 
       <button
