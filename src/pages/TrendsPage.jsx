@@ -129,18 +129,19 @@ export default function TrendsPage() {
         <div className="grid grid-cols-2 gap-3 pt-3 border-t border-white/10 text-xs">
           <div>
             <p className="text-gray-400 text-[11px] mb-0.5">每日总持有折旧</p>
-            <p className="font-extrabold text-[#34C759] text-sm text-price">
-              ¥{totalDailyDepreciation.toFixed(2)} /天
+            <p className="font-extrabold text-[#34C759] text-sm text-price whitespace-nowrap">
+              ¥{totalDailyDepreciation.toFixed(2)}{' '}
+              <span className="text-[10px] font-medium">/天</span>
             </p>
           </div>
           <div className="border-l border-white/10 pl-3">
             <p className="text-gray-400 text-[11px] mb-0.5">平均单件日均</p>
-            <p className="font-extrabold text-white text-sm text-price">
+            <p className="font-extrabold text-white text-sm text-price whitespace-nowrap">
               ¥
               {activeItems.length > 0
                 ? (totalDailyDepreciation / activeItems.length).toFixed(2)
                 : '0.00'}{' '}
-              /天
+              <span className="text-[10px] font-medium">/天</span>
             </p>
           </div>
         </div>
