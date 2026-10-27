@@ -157,7 +157,6 @@ export default function BillUploadModal({ onClose, onRefresh }) {
       payMethod,
       date: billDate,
       time: `${billDate} ${billTime}`,
-      screenshot,
     });
 
     onRefresh();
@@ -276,8 +275,8 @@ export default function BillUploadModal({ onClose, onRefresh }) {
             </p>
             <p className="text-xs text-[#8E8E9A] max-w-xs">
               {hasKey
-                ? 'DeepSeek AI 视觉模型自动识别商户、金额、时间与分类'
-                : 'AI 自动识别商户名称、扣款金额、交易时间并精准匹配消费分类'}
+                ? 'DeepSeek 识别商户、金额、时间和分类。截图只用于这次识别，不会保存。'
+                : '识别商户、金额和时间。截图只用于这次识别，不会保存。'}
             </p>
             <input
               ref={fileInputRef}

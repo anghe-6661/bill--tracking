@@ -1,5 +1,5 @@
 import { DEMO_ITEM_IMAGES } from './assets/demoImages';
-import { triggerDebouncedPush } from './sync';
+import { omitBillScreenshots, triggerDebouncedPush } from './sync';
 
 // Data store using localStorage with initial demo data
 const STORAGE_KEYS = {
@@ -267,12 +267,14 @@ export function getBills() {
 }
 
 export function saveBills(bills) {
-  saveData(STORAGE_KEYS.BILLS, bills);
+  saveData(STORAGE_KEYS.BILLS, omitBillScreenshots(bills));
 }
 
 export function addBill(bill) {
   const bills = getBills();
-  bills.push({ ...bill, id: Date.now().toString() });
+  const entry = { ...bill, id: Date.now().toString() };
+  delete entry.screenshot;
+  bills.push(entry);
   saveBills(bills);
   return bills;
 }
@@ -471,3 +473,22 @@ export function getCategoryColor(name) {
   }
   return CUSTOM_CATEGORY_COLORS[hash % CUSTOM_CATEGORY_COLORS.length];
 }
+
+// 旧账单把截图以 data URL 存在本地。打开应用时丢掉图片，不改更新时间，避免同步时盖掉另一台设备的新账单。
+function discardStoredBillScreenshots() {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.BILLS);
+    if (!raw || !raw.includes('data:image')) return;
+    const bills = JSON.parse(raw);
+    if (!Array.isArray(bills)) return;
+    const next = omitBillScreenshots(bills);
+    if (next.some((bill, index) => bill !== bills[index])) {
+      localStorage.setItem(STORAGE_KEYS.BILLS, JSON.stringify(next));
+    }
+  } catch (error) {
+    console.warn('Failed to drop bill screenshots:', error);
+  }
+}
+
+discardStoredBillScreenshots();

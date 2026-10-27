@@ -6,7 +6,6 @@ import {
   AlertTriangle,
   CheckCircle,
   Edit2,
-  X,
 } from 'lucide-react';
 import {
   getBills,
@@ -30,7 +29,6 @@ export default function BillsPage({ onRefresh }) {
 
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [showBudgetModal, setShowBudgetModal] = useState(false);
-  const [previewImage, setPreviewImage] = useState(null);
 
   // Group bills by date
   const groupedBills = useMemo(() => {
@@ -360,14 +358,6 @@ export default function BillsPage({ onRefresh }) {
                             <span>{timeDisplay}</span>
                             <span>·</span>
                             <span>{bill.payMethod || '移动支付'}</span>
-                            {bill.screenshot && (
-                              <button
-                                onClick={() => setPreviewImage(bill.screenshot)}
-                                className="text-emerald-600 font-semibold underline underline-offset-2 flex items-center gap-0.5"
-                              >
-                                <span>截图</span>
-                              </button>
-                            )}
                           </div>
                         </div>
                       </div>
@@ -428,24 +418,6 @@ export default function BillsPage({ onRefresh }) {
         />
       )}
 
-      {/* ── Fullscreen Screenshot Preview Modal ── */}
-      {previewImage && (
-        <div className="overlay" onClick={() => setPreviewImage(null)}>
-          <div className="relative max-w-sm max-h-[85vh] p-2" onClick={(e) => e.stopPropagation()}>
-            <button
-              onClick={() => setPreviewImage(null)}
-              className="absolute top-4 right-4 z-10 w-8 h-8 rounded-full bg-black/60 text-white flex items-center justify-center"
-            >
-              <X size={18} />
-            </button>
-            <img
-              src={previewImage}
-              alt="Receipt preview"
-              className="max-h-[80vh] rounded-2xl shadow-2xl object-contain bg-white"
-            />
-          </div>
-        </div>
-      )}
     </div>
   );
 }

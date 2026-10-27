@@ -56,6 +56,23 @@ async function jsonOrThrow(res, label) {
   if (!res.ok) throw new Error(body.message || `${label} (HTTP ${res.status})`);
   return body;
 }
+export function omitBillScreenshots(bills) {
+  if (!Array.isArray(bills)) return [];
+  return bills.map((bill) => {
+    if (!bill || typeof bill.screenshot !== 'string' || bill.screenshot === '') return bill;
+    const rest = { ...bill };
+    delete rest.screenshot;
+    return rest;
+  });
+}
+
+function withoutBillScreenshots(data) {
+  const source = Array.isArray(data?.bills) ? data.bills : [];
+  const bills = omitBillScreenshots(source);
+  const changed = bills.some((bill, index) => bill !== source[index]);
+  return changed ? { ...data, bills } : data;
+}
+
 function readLocal() {
   const read = (key, fallback) => {
     try { return JSON.parse(localStorage.getItem(key) || fallback); }
@@ -73,12 +90,13 @@ function readLocal() {
 }
 function writeLocal(data) {
   // Avoid store.save*: that would schedule another upload.
-  localStorage.setItem('bill_items', JSON.stringify(data.items));
-  localStorage.setItem('bill_bills', JSON.stringify(data.bills));
+  const safe = withoutBillScreenshots(data);
+  localStorage.setItem('bill_items', JSON.stringify(safe.items));
+  localStorage.setItem('bill_bills', JSON.stringify(safe.bills));
   localStorage.setItem('bill_settings', JSON.stringify(data.settings));
   localStorage.setItem('bill_deleted_item_ids', JSON.stringify(data.deletedItemIds || []));
   localStorage.setItem('bill_deleted_bill_ids', JSON.stringify(data.deletedBillIds || []));
-  localStorage.setItem('bill_last_updated', String(data.updatedAt));
+  localStorage.setItem('bill_last_updated', String(safe.updatedAt));
   window.dispatchEvent(new CustomEvent('bill-data-synced'));
 }
 function mergeRecords(cloud, local) {
@@ -162,9 +180,10 @@ async function readGist(token, id) {
   }
 }
 async function writeGist(token, id, data) {
+  const safe = withoutBillScreenshots(data);
   await jsonOrThrow(await fetch(`${API}/${id}`, {
     method: 'PATCH', headers: headers(token),
-    body: JSON.stringify({ files: { [FILE]: { content: JSON.stringify(data) } } }),
+    body: JSON.stringify({ files: { [FILE]: { content: JSON.stringify(safe) } } }),
   }), 'Gist 推送失败');
 }
 async function createGist(token, data) {
@@ -172,7 +191,7 @@ async function createGist(token, data) {
     method: 'POST', headers: headers(token),
     body: JSON.stringify({
       description: 'Bill App 个人记账与物品数据同步', public: false,
-      files: { [FILE]: { content: JSON.stringify(data) } },
+      files: { [FILE]: { content: JSON.stringify(withoutBillScreenshots(data)) } },
     }),
   }), '创建云端 Gist 失败');
   return gist.id;
@@ -184,12 +203,12 @@ export async function connectSync(token) {
   const cleanToken = token.trim();
   if (!cleanToken) throw new Error('请输入同步令牌');
   const existing = await findGist(cleanToken);
-  const local = readLocal();
+  const local = withoutBillScreenshots(readLocal());
   let gistId;
   let result;
   if (existing) {
     gistId = existing.id;
-    result = mergeData(await readGist(cleanToken, gistId), local);
+    result = mergeData(withoutBillScreenshots(await readGist(cleanToken, gistId)), local);
     await writeGist(cleanToken, gistId, result);
   } else {
     result = { ...local, updatedAt: Math.max(Date.now(), local.updatedAt + 1) };
@@ -212,8 +231,11 @@ async function syncNow() {
   if (!config.token) return { updated: false, reason: '未配置 GitHub Token' };
   try {
     const id = config.gistId || await getOrCreateGistId(config.token);
-    const cloud = await readGist(config.token, id);
-    const local = readLocal();
+    const cloudRaw = await readGist(config.token, id);
+    const localRaw = readLocal();
+    const cloud = withoutBillScreenshots(cloudRaw);
+    const local = withoutBillScreenshots(localRaw);
+    const screenshotsDropped = cloud !== cloudRaw || local !== localRaw;
     const settings = pickSettings(cloud, local);
     let result = cloud;
     let updated = false;
@@ -241,6 +263,12 @@ async function syncNow() {
       pushed = true;
     } else if (settings !== local.settings || settings !== cloud.settings) {
       result = { ...local, settings, updatedAt: Date.now() };
+      await writeGist(config.token, id, result);
+      writeLocal(result);
+      updated = pushed = true;
+    }
+    if (screenshotsDropped) {
+      result = { ...withoutBillScreenshots(result), updatedAt: Date.now() };
       await writeGist(config.token, id, result);
       writeLocal(result);
       updated = pushed = true;
