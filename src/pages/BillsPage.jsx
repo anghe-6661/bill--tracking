@@ -1,17 +1,12 @@
 import { useState, useMemo } from 'react';
 import {
-  Receipt,
-  Plus,
   Upload,
   Camera,
   Trash2,
-  Calendar,
   AlertTriangle,
   CheckCircle,
-  TrendingDown,
   Edit2,
   X,
-  CreditCard,
 } from 'lucide-react';
 import {
   getBills,
@@ -65,7 +60,7 @@ export default function BillsPage({ onRefresh }) {
   const spentRatio = dailyBudget > 0 ? Math.min(todaySpent / dailyBudget, 1) : 0;
   const isOverspent = todaySpent > dailyBudget;
   const isWarning = !isOverspent && remainingBudget / dailyBudget <= 0.2;
-  const spentByCategory = getTodaySpentByCategory(bills);
+  const spentByCategory = useMemo(() => getTodaySpentByCategory(bills), [bills]);
   const categoryRows = useMemo(() => {
     const names = new Set([
       ...Object.keys(settings.categoryBudgets || {}),

@@ -23,9 +23,37 @@ const headers = (token) => ({
   Accept: 'application/vnd.github+json',
   'Content-Type': 'application/json',
 });
+
+// GitHub 原始报错对使用者不友好，翻译成带自助指引的提示；未匹配的保留原文。
+export function friendlySyncError(error) {
+  const raw = (error && error.message) || '';
+  if (/Bad credentials|HTTP 401/i.test(raw)) {
+    return '同步令牌无效或已过期：请到 GitHub 重新生成 classic Token（只勾 gist 权限），再在本页「更换 Token」。';
+  }
+  if (/云端备份缺失/.test(raw)) {
+    return '云端备份缺失（本地数据未受影响）：请「断开同步」后重新连接同一 Token，用本机数据重建云端备份。';
+  }
+  if (/云端备份为空/.test(raw)) {
+    return '云端备份为空（本地数据未受影响）：请「断开同步」后重新连接以重建备份。';
+  }
+  if (/云端备份格式错误/.test(raw)) {
+    return '云端备份格式异常（本地数据未受影响）：请「断开同步」后重新连接。';
+  }
+  if (/HTTP 404/.test(raw)) {
+    return '云端备份不存在或令牌无权访问：请「断开同步」后重新连接。';
+  }
+  if (/HTTP 403|rate limit/i.test(raw)) {
+    return 'GitHub 请求频率受限：请过几分钟再点「立即同步」。';
+  }
+  if (/Failed to fetch|NetworkError|network|Load failed/i.test(raw)) {
+    return '网络连接失败：无法访问 GitHub，请检查网络后点「立即同步」重试。';
+  }
+  return raw || '同步失败，原因未知';
+}
+
 async function jsonOrThrow(res, label) {
   const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body.message || `${label} (${res.status})`);
+  if (!res.ok) throw new Error(body.message || `${label} (HTTP ${res.status})`);
   return body;
 }
 function readLocal() {
@@ -74,10 +102,16 @@ function mergeData(cloud, local) {
   };
 }
 async function findGist(token) {
-  const list = await jsonOrThrow(
-    await fetch(`${API}?per_page=100`, { headers: headers(token) }), 'GitHub Token 验证失败'
-  );
-  return list.find((gist) => gist.files?.[FILE]);
+  // Gist 列表按更新时间排序、每页 100 条；翻 3 页覆盖 300 条，降低多备份时绑错云端的概率。
+  for (let page = 1; page <= 3; page += 1) {
+    const list = await jsonOrThrow(
+      await fetch(`${API}?per_page=100&page=${page}`, { headers: headers(token) }), 'GitHub Token 验证失败'
+    );
+    const hit = list.find((gist) => gist.files?.[FILE]);
+    if (hit) return hit;
+    if (list.length < 100) return undefined;
+  }
+  return undefined;
 }
 async function readGist(token, id) {
   const gist = await jsonOrThrow(
@@ -95,7 +129,7 @@ async function readGist(token, id) {
       headers: { Authorization: `Bearer ${token.trim()}` },
       cache: 'no-store',
     });
-    if (!raw.ok) throw new Error(`完整云端备份读取失败 (${raw.status})`);
+    if (!raw.ok) throw new Error(`完整云端备份读取失败 (HTTP ${raw.status})`);
     content = await raw.text();
   }
   if (!content) throw new Error('云端备份为空，未覆盖本地数据');
@@ -180,8 +214,9 @@ async function syncNow() {
     saveSyncConfig({ lastSyncTime: Date.now(), lastSyncedDataAt: result.updatedAt, lastError: '' });
     return { updated, pushed };
   } catch (error) {
-    saveSyncConfig({ lastError: error.message || '网络异常' });
-    throw error;
+    const message = friendlySyncError(error);
+    saveSyncConfig({ lastError: message });
+    throw new Error(message);
   }
 }
 function runSync() {

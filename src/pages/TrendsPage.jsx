@@ -1,12 +1,9 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import {
   PieChart as PieIcon,
   BarChart3,
-  TrendingUp,
   Wallet,
-  Clock,
   Award,
-  Sparkles,
 } from 'lucide-react';
 import {
   getItems,

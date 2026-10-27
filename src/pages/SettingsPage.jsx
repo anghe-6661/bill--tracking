@@ -31,6 +31,7 @@ import {
   clearSyncConfig,
   connectSync,
   pushToCloud,
+  friendlySyncError,
 } from '../sync';
 
 export default function SettingsPage({ onRefresh }) {
@@ -96,7 +97,7 @@ export default function SettingsPage({ onRefresh }) {
       onRefresh();
       closeSyncForm();
     } catch (err) {
-      showToast('同步提示: ' + (err.message || '网络异常'));
+      showToast('同步提示: ' + friendlySyncError(err));
     } finally {
       setIsSyncing(false);
       setSyncConfig(getSyncConfig());
@@ -122,7 +123,7 @@ export default function SettingsPage({ onRefresh }) {
       if (res.updated) onRefresh();
       setSyncConfig(getSyncConfig());
     } catch (err) {
-      alert('同步失败: ' + err.message);
+      alert('同步失败: ' + friendlySyncError(err));
     } finally {
       setIsSyncing(false);
     }
@@ -167,7 +168,7 @@ export default function SettingsPage({ onRefresh }) {
           names.forEach((name) => caches.delete(name));
         });
       }
-    } catch (_) {}
+    } catch { /* caches API 不可用时忽略 */ }
     showToast('正在清空缓存并重新载入最新版本...');
     setTimeout(() => {
       window.location.reload(true);
@@ -202,7 +203,7 @@ export default function SettingsPage({ onRefresh }) {
         importAllData(reader.result);
         showToast('数据导入恢复成功！');
         onRefresh();
-      } catch (err) {
+      } catch {
         alert('导入失败，请确保选择的是有效的 JSON 备份文件！');
       }
     };

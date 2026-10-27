@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Search, ArrowUpDown, Filter, CheckSquare, Plus } from 'lucide-react';
+import { Search, Plus } from 'lucide-react';
 import ItemCard from '../components/ItemCard';
 import ItemDetailModal from '../components/ItemDetailModal';
 import ItemEditModal from '../components/ItemEditModal';
@@ -24,19 +24,6 @@ export default function ItemsPage({ onRefresh }) {
   const categories = useMemo(() => {
     const set = new Set(items.map((i) => i.category || '其他'));
     return ['all', ...Array.from(set)];
-  }, [items]);
-
-  // Statistics for bottom summary
-  const totalActiveCost = useMemo(() => {
-    return items
-      .filter((i) => i.status === 'active' && !i.isPriceless)
-      .reduce((sum, i) => sum + i.price, 0);
-  }, [items]);
-
-  const totalDailyCost = useMemo(() => {
-    return items
-      .filter((i) => i.status === 'active')
-      .reduce((sum, i) => sum + calcCostPerDay(i), 0);
   }, [items]);
 
   // Filtered & Sorted items

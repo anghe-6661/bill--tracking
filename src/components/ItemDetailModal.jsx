@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { X, Calendar, DollarSign, Clock, Trash2, Edit3, CheckCircle2, RotateCcw, ArrowRight } from 'lucide-react';
+import { X, Trash2, Edit3, RotateCcw, ArrowRight } from 'lucide-react';
 import { calcDaysUsed, calcCostPerDay, updateItem, deleteItem } from '../store';
 
 export default function ItemDetailModal({ item, onClose, onEdit, onRefresh }) {

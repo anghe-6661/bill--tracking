@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import { X, Upload, Sparkles, Check, AlertCircle, Camera, RefreshCw, KeyRound } from 'lucide-react';
+import { X, Upload, Sparkles, Check, AlertCircle, RefreshCw, KeyRound } from 'lucide-react';
 import { addBill, CATEGORY_ICONS, getSettings, getCategoryIcon } from '../store';
 import { recognizeJsonFromImage } from '../ai';
 
