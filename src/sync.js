@@ -125,10 +125,9 @@ async function readGist(token, id) {
     if (rawUrl.protocol !== 'https:' || rawUrl.hostname !== 'gist.githubusercontent.com') {
       throw new Error('云端备份地址异常，未覆盖本地数据');
     }
-    const raw = await fetch(rawUrl, {
-      headers: { Authorization: `Bearer ${token.trim()}` },
-      cache: 'no-store',
-    });
+    // 超过约 1MB 时接口只返回截断内容。raw 地址本身带密钥，不能再附加 Authorization：
+    // 该域名不接受带令牌的跨域预检，浏览器会报 Failed to fetch。
+    const raw = await fetch(rawUrl, { cache: 'no-store' });
     if (!raw.ok) throw new Error(`完整云端备份读取失败 (HTTP ${raw.status})`);
     content = await raw.text();
   }
