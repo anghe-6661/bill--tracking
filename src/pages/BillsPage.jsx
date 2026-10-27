@@ -22,6 +22,7 @@ import {
 } from '../store';
 import BillUploadModal from '../components/BillUploadModal';
 import BudgetEditor from '../components/BudgetEditor';
+import { pushToCloud } from '../sync';
 
 export default function BillsPage({ onRefresh }) {
   const bills = getBills();
@@ -113,6 +114,7 @@ export default function BillsPage({ onRefresh }) {
     saveSettings({ ...settings, ...next });
     setShowBudgetModal(false);
     onRefresh();
+    pushToCloud().catch(() => {});
   };
 
   const handleDeleteBill = (id, merchant) => {

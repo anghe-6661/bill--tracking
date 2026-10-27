@@ -156,6 +156,7 @@ export const DEFAULT_CATEGORIES = [
   '交通出行',
   '数码订阅',
   '日常购物',
+  '会员',
   '娱乐',
   '医疗健康',
   '其他',
@@ -285,9 +286,20 @@ export function deleteBill(id) {
   return bills;
 }
 
+function placeBuiltinCategories(categories) {
+  const list = [...categories];
+  for (const name of DEFAULT_CATEGORIES) {
+    if (list.includes(name)) continue;
+    const anchor = name === '会员' ? list.indexOf('娱乐') : list.indexOf('其他');
+    if (anchor === -1) list.push(name);
+    else list.splice(anchor, 0, name);
+  }
+  return list;
+}
+
 export function normalizeSettings(raw = {}) {
   const categories = Array.isArray(raw.categories) && raw.categories.length > 0
-    ? raw.categories.filter((name) => typeof name === 'string' && name.trim())
+    ? placeBuiltinCategories(raw.categories.filter((name) => typeof name === 'string' && name.trim()))
     : [...DEFAULT_CATEGORIES];
 
   const categoryBudgets = {};
@@ -310,6 +322,7 @@ export function normalizeSettings(raw = {}) {
     dailyBudget: parseFloat(raw.dailyBudget) > 0 ? parseFloat(raw.dailyBudget) : DEFAULT_SETTINGS.dailyBudget,
     categories: [...categories, ...extraCats],
     categoryBudgets,
+    settingsUpdatedAt: Number(raw.settingsUpdatedAt) || 0,
   };
 }
 
@@ -318,7 +331,10 @@ export function getSettings() {
 }
 
 export function saveSettings(settings) {
-  saveData(STORAGE_KEYS.SETTINGS, normalizeSettings(settings));
+  saveData(STORAGE_KEYS.SETTINGS, normalizeSettings({
+    ...settings,
+    settingsUpdatedAt: Date.now(),
+  }));
 }
 
 // ── Calculations ──
@@ -424,6 +440,7 @@ export const CATEGORY_ICONS = {
   '交通出行': '🚗',
   '数码订阅': '📱',
   '日常购物': '🛒',
+  '会员': '👑',
   '娱乐': '🎮',
   '医疗健康': '💊',
   '其他': '📦',
@@ -434,6 +451,7 @@ export const CATEGORY_COLORS = {
   '交通出行': '#4ECDC4',
   '数码订阅': '#7C5CFC',
   '日常购物': '#FFB84D',
+  '会员': '#C9A227',
   '娱乐': '#FF8ED4',
   '医疗健康': '#45B7D1',
   '其他': '#95A5A6',

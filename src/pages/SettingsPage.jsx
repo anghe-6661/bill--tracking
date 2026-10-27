@@ -177,8 +177,8 @@ export default function SettingsPage({ onRefresh }) {
 
   const handleSaveBudget = (next) => {
     saveSettings({ ...settings, ...next });
-    showToast('预算设置已成功保存！');
-    onRefresh();
+    showToast('预算已保存。');
+    pushToCloud().catch(() => {});
   };
 
   const handleExport = () => {

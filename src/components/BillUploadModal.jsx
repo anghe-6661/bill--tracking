@@ -44,7 +44,7 @@ const MOCK_OCR_TEMPLATES = [
 ];
 
 const BILL_RECOGNIZE_PROMPT =
-  '这是一张支付截图（微信支付/支付宝/银行转账/小红书等）。请提取消费信息，仅返回一个 JSON 对象，格式：{"merchant":"商户或交易说明","amount":金额数字,"category":"餐饮美食/交通出行/日常购物/娱乐/医疗健康/数码订阅/其他 之一","payMethod":"微信支付/支付宝/银行卡/现金/其他 之一","date":"YYYY-MM-DD格式日期","time":"HH:MM格式时间"}。无法识别的字段填null。不要返回其他文字。';
+  '这是一张支付截图（微信支付/支付宝/银行转账/小红书等）。请提取消费信息，仅返回一个 JSON 对象，格式：{"merchant":"商户或交易说明","amount":金额数字,"category":"餐饮美食/交通出行/日常购物/会员/娱乐/医疗健康/数码订阅/其他 之一","payMethod":"微信支付/支付宝/银行卡/现金/其他 之一","date":"YYYY-MM-DD格式日期","time":"HH:MM格式时间"}。无法识别的字段填null。不要返回其他文字。';
 
 function parseBillWithDeepSeek(base64Image, apiKey) {
   return recognizeJsonFromImage(base64Image, apiKey, BILL_RECOGNIZE_PROMPT);

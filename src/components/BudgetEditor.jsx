@@ -68,7 +68,7 @@ export default function BudgetEditor({
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <form onSubmit={handleSubmit} noValidate className="space-y-4">
       <div>
         <label className="text-xs font-bold text-[#4A4A52] block mb-1.5">今日总预算</label>
         <div className="flex items-center gap-2 p-3 bg-[#F8F9FA] rounded-2xl border border-gray-200">

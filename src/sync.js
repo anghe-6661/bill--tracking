@@ -88,6 +88,26 @@ function mergeRecords(cloud, local) {
   }
   return [...records.values()];
 }
+function asSettings(data) {
+  const settings = data?.settings;
+  return settings && typeof settings === 'object' && !Array.isArray(settings) ? settings : {};
+}
+function budgetCount(settings) {
+  const budgets = settings.categoryBudgets;
+  return budgets && typeof budgets === 'object' && !Array.isArray(budgets) ? Object.keys(budgets).length : 0;
+}
+// 账单更新时间不能决定预算。分类额度跟着 settingsUpdatedAt 走，避免另一台设备记账后把预算盖掉。
+export function pickSettings(cloud, local) {
+  const cloudSettings = asSettings(cloud);
+  const localSettings = asSettings(local);
+  const cloudStamp = Number(cloudSettings.settingsUpdatedAt) || 0;
+  const localStamp = Number(localSettings.settingsUpdatedAt) || 0;
+  if (localStamp !== cloudStamp) return localStamp > cloudStamp ? localSettings : cloudSettings;
+  const localHas = budgetCount(localSettings) > 0;
+  const cloudHas = budgetCount(cloudSettings) > 0;
+  if (localHas !== cloudHas) return localHas ? localSettings : cloudSettings;
+  return (local.updatedAt || 0) >= (cloud.updatedAt || 0) ? localSettings : cloudSettings;
+}
 function mergeData(cloud, local) {
   const deletedItemIds = [...new Set([...(cloud.deletedItemIds || []), ...(local.deletedItemIds || [])].map(String))];
   const deletedBillIds = [...new Set([...(cloud.deletedBillIds || []), ...(local.deletedBillIds || [])].map(String))];
@@ -96,7 +116,7 @@ function mergeData(cloud, local) {
     bills: mergeRecords(cloud.bills, local.bills).filter((bill) => !deletedBillIds.includes(String(bill.id))),
     deletedItemIds,
     deletedBillIds,
-    settings: local.updatedAt > cloud.updatedAt ? local.settings : cloud.settings,
+    settings: pickSettings(cloud, local),
     updatedAt: Math.max(Date.now(), cloud.updatedAt + 1, local.updatedAt + 1),
     version: '1.1',
   };
@@ -194,6 +214,7 @@ async function syncNow() {
     const id = config.gistId || await getOrCreateGistId(config.token);
     const cloud = await readGist(config.token, id);
     const local = readLocal();
+    const settings = pickSettings(cloud, local);
     let result = cloud;
     let updated = false;
     let pushed = false;
@@ -203,12 +224,26 @@ async function syncNow() {
       writeLocal(result);
       updated = pushed = true;
     } else if (cloud.updatedAt > local.updatedAt) {
-      writeLocal(cloud);
+      result = { ...cloud, settings };
+      writeLocal(result);
       updated = true;
+      if (settings !== cloud.settings) {
+        result = { ...result, updatedAt: Date.now() };
+        await writeGist(config.token, id, result);
+        writeLocal(result);
+        pushed = true;
+      }
     } else if (local.updatedAt > cloud.updatedAt) {
-      await writeGist(config.token, id, local);
-      result = local;
+      result = { ...local, settings };
+      if (settings !== local.settings) result = { ...result, updatedAt: Date.now() };
+      await writeGist(config.token, id, result);
+      if (settings !== local.settings) writeLocal(result);
       pushed = true;
+    } else if (settings !== local.settings || settings !== cloud.settings) {
+      result = { ...local, settings, updatedAt: Date.now() };
+      await writeGist(config.token, id, result);
+      writeLocal(result);
+      updated = pushed = true;
     }
     saveSyncConfig({ lastSyncTime: Date.now(), lastSyncedDataAt: result.updatedAt, lastError: '' });
     return { updated, pushed };
